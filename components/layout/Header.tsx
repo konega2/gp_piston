@@ -1,4 +1,7 @@
+'use client';
+
 import Link from 'next/link';
+import { clearAdminSession } from '@/lib/auth/admin-session';
 
 type HeaderProps = {
   title: string;
@@ -21,6 +24,7 @@ export function Header({ title, subtitle }: HeaderProps) {
 
         <Link
           href="/admin/login"
+          onClick={clearAdminSession}
           className="rounded-md border border-white/15 bg-white/[0.02] px-3 py-1.5 text-[11px] uppercase tracking-[0.12em] text-gp-textSoft transition-all duration-200 hover:border-gp-racingRed/45 hover:bg-gp-racingRed/[0.08] hover:text-white"
         >
           Cerrar sesión

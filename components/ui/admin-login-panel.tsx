@@ -1,7 +1,8 @@
 'use client';
 
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { getRememberedUser, isAdminAuthenticated, saveAdminSession } from '@/lib/auth/admin-session';
 import { validateAdminCredentials } from '@/lib/auth/mock-admin-auth';
 
 type Credentials = {
@@ -17,8 +18,22 @@ const initialCredentials: Credentials = {
 export function AdminLoginPanel() {
   const router = useRouter();
   const [credentials, setCredentials] = useState<Credentials>(initialCredentials);
+  const [rememberUser, setRememberUser] = useState(false);
   const [error, setError] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (isAdminAuthenticated()) {
+      router.replace('/admin/events');
+      return;
+    }
+
+    const remembered = getRememberedUser();
+    if (remembered) {
+      setCredentials((prev) => ({ ...prev, user: remembered }));
+      setRememberUser(true);
+    }
+  }, [router]);
 
   const isDisabled = useMemo(
     () => isSubmitting || credentials.user.length === 0 || credentials.password.length === 0,
@@ -37,6 +52,8 @@ export function AdminLoginPanel() {
       setIsSubmitting(false);
       return;
     }
+
+    saveAdminSession(credentials.user, rememberUser);
 
     router.push('/admin/events');
   };
@@ -66,6 +83,16 @@ export function AdminLoginPanel() {
             icon={<LockIcon />}
             onChange={(value) => setCredentials((prev) => ({ ...prev, password: value }))}
           />
+
+          <label className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2 text-xs uppercase tracking-[0.1em] text-gp-textSoft">
+            <input
+              type="checkbox"
+              checked={rememberUser}
+              onChange={(event) => setRememberUser(event.target.checked)}
+              className="h-4 w-4 rounded border-white/20 bg-transparent accent-cyan-400"
+            />
+            Recordar usuario
+          </label>
 
           {error ? (
             <div className="rounded-lg border border-gp-racingRed/45 bg-gp-racingRed/10 px-3 py-2 text-xs tracking-[0.06em] text-red-200" role="alert">
