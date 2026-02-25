@@ -7,7 +7,8 @@ import { clearSessionOnReloadIfNeeded, isAdminAuthenticated } from '@/lib/auth/a
 export default function AdminRootLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [isReady, setIsReady] = useState(false);
+  const onLoginRoute = pathname === '/admin/login';
+  const [isReady, setIsReady] = useState(onLoginRoute);
 
   useEffect(() => {
     const handleBeforeUnload = () => {
@@ -17,26 +18,23 @@ export default function AdminRootLayout({ children }: { children: React.ReactNod
     window.addEventListener('beforeunload', handleBeforeUnload);
 
     const authenticated = isAdminAuthenticated();
-    const onLoginRoute = pathname === '/admin/login';
 
     if (!authenticated && !onLoginRoute) {
+      setIsReady(false);
       router.replace('/admin/login');
-      return;
-    }
-
-    if (authenticated && onLoginRoute) {
+    } else if (authenticated && onLoginRoute) {
+      setIsReady(false);
       router.replace('/admin/events');
-      return;
+    } else {
+      setIsReady(true);
     }
-
-    setIsReady(true);
 
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [pathname, router]);
+  }, [onLoginRoute, pathname, router]);
 
-  if (!isReady) {
+  if (!isReady && !onLoginRoute) {
     return null;
   }
 
