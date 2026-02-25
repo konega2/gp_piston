@@ -8,9 +8,9 @@ import { useActiveEvent } from '@/context/ActiveEventContext';
 import { useClassification } from '@/context/ClassificationContext';
 import { usePilots } from '@/context/PilotsContext';
 import { useTimeAttackSessions } from '@/context/TimeAttackContext';
-import { getEventById } from '@/lib/eventStorage';
 import { loadModuleState } from '@/lib/eventStateClient';
 import { buildCombinedStandings } from '@/lib/combinedStandings';
+import { useEventInfo } from '@/lib/event-client';
 import {
   EMPTY_RACE_RESULT,
   buildIndividualStandings,
@@ -52,6 +52,7 @@ const PHASES: PhaseDefinition[] = [
 
 export default function AdminDashboardPage() {
   const { activeEventId, isHydrated: activeEventHydrated } = useActiveEvent();
+  const eventInfo = useEventInfo(activeEventId);
   const { pilots, isHydrated: pilotsHydrated } = usePilots();
   const { sessions, isHydrated: timeAttackHydrated } = useTimeAttackSessions();
   const { qualySessions, qualyRecords, isHydrated: qualyHydrated } = useClassification();
@@ -125,7 +126,12 @@ export default function AdminDashboardPage() {
     const timeAttackCompleted = sessions.some((session) => session.times.length > 0);
     const qualyCompleted =
       assignedQualyPilotIds.length > 0 && assignedQualyPilotIds.every((pilotId) => qualyTimesByPilot.has(pilotId));
-    const teamsGenerated = teams.length === 10 && teams.every((team) => team.members.length === 8);
+    const configuredTeams = eventInfo?.config?.teamsCount ?? 0;
+    const expectedTeamMembers = configuredTeams > 0 ? Math.ceil(pilots.length / configuredTeams) : 0;
+    const teamsGenerated =
+      configuredTeams > 0 &&
+      teams.length === configuredTeams &&
+      teams.every((team) => team.members.length > 0 && team.members.length <= expectedTeamMembers);
     const race1Completed = pilots.length > 0 && pilots.every((pilot) => race1PointsByPilot.has(pilot.id));
     const race2Completed = pilots.length > 0 && pilots.every((pilot) => race2PointsByPilot.has(pilot.id));
     const resultsFinalized =
@@ -145,7 +151,7 @@ export default function AdminDashboardPage() {
       resultsFinalized,
       eventClosed: timeAttackCompleted && qualyCompleted && teamsGenerated && race1Completed && race2Completed && resultsFinalized
     };
-  }, [assignedQualyPilotIds, pilots, qualyTimesByPilot, race1PointsByPilot, race2PointsByPilot, sessions, teams]);
+  }, [assignedQualyPilotIds, pilots, qualyTimesByPilot, race1PointsByPilot, race2PointsByPilot, sessions, teams, eventInfo]);
 
   const completedPhases = useMemo(() => PHASES.filter((phase) => eventStatus[phase.key]).length, [eventStatus]);
   const totalPhases = PHASES.length;
@@ -180,16 +186,9 @@ export default function AdminDashboardPage() {
       ? '🟡 EN PROGRESO'
       : '🔴 BLOQUEADO';
 
-  const eventMeta = useMemo(() => {
-    if (!activeEventHydrated) {
-      return null;
-    }
-
-    return getEventById(activeEventId);
-  }, [activeEventId, activeEventHydrated]);
-  const eventLocation = eventMeta?.location ?? '—';
-  const eventName = eventMeta?.name ?? 'GP Pistón';
-  const eventDate = eventMeta?.date ? formatEventDate(eventMeta.date) : deriveEventDate(results);
+  const eventLocation = eventInfo?.location ?? '—';
+  const eventName = eventInfo?.name ?? 'GP Pistón';
+  const eventDate = eventInfo?.date ? formatEventDate(String(eventInfo.date)) : deriveEventDate(results);
 
   return (
     <main className="min-h-screen bg-gp-bg text-white">

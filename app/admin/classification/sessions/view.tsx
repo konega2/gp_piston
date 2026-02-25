@@ -7,10 +7,11 @@ import { Sidebar } from '@/components/layout/Sidebar';
 import { useActiveEvent } from '@/context/ActiveEventContext';
 import { getQualySessionTimeRange, useClassification } from '@/context/ClassificationContext';
 import { usePilots } from '@/context/PilotsContext';
-import { getEventById } from '@/lib/eventStorage';
+import { useEventName } from '@/lib/event-client';
 
 export default function ClassificationSessionsPage() {
   const { activeEventId, isHydrated: activeEventHydrated } = useActiveEvent();
+  const eventNameFromDb = useEventName(activeEventId);
   const {
     qualySessions,
     isHydrated,
@@ -21,7 +22,7 @@ export default function ClassificationSessionsPage() {
     resetQualyAssignments
   } = useClassification();
   const { pilots } = usePilots();
-  const eventName = activeEventHydrated ? getEventById(activeEventId)?.name ?? 'Evento' : 'Evento';
+  const eventName = activeEventHydrated ? eventNameFromDb ?? 'Evento' : 'Evento';
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [isAssignOpen, setIsAssignOpen] = useState(false);
   const [assignMode, setAssignMode] = useState<'levels' | 'karts' | 'random' | 'manual'>('levels');

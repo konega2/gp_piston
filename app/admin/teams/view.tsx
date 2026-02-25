@@ -8,10 +8,10 @@ import { useActiveEvent } from '@/context/ActiveEventContext';
 import { useClassification } from '@/context/ClassificationContext';
 import { usePilots } from '@/context/PilotsContext';
 import { useTimeAttackSessions } from '@/context/TimeAttackContext';
-import { getEventRuntimeConfig } from '@/lib/eventStorage';
 import { loadModuleState, saveModuleState } from '@/lib/eventStateClient';
 import { buildCombinedStandings } from '@/lib/combinedStandings';
 import type { PilotRecord } from '@/data/pilots';
+import { useEventRuntimeConfig } from '@/lib/event-client';
 
 type TeamRecord = {
   id: string;
@@ -21,6 +21,7 @@ type TeamRecord = {
 
 export default function TeamsPage() {
   const { activeEventId, isHydrated: activeEventHydrated } = useActiveEvent();
+  const runtimeConfig = useEventRuntimeConfig(activeEventId);
   const { pilots, isHydrated: pilotsHydrated } = usePilots();
   const { sessions } = useTimeAttackSessions();
   const { qualyRecords } = useClassification();
@@ -36,9 +37,9 @@ export default function TeamsPage() {
   const isHydrated = pilotsHydrated && activeEventHydrated;
 
   const configuredTeamsCount = useMemo(() => {
-    const count = getEventRuntimeConfig(activeEventId).teamsCount;
-    return Number.isFinite(count) && count > 0 ? count : 5;
-  }, [activeEventId]);
+    const count = runtimeConfig?.teamsCount ?? 0;
+    return Number.isFinite(count) && count > 0 ? count : 0;
+  }, [runtimeConfig]);
 
   const pilotsById = useMemo(() => new Map(pilots.map((pilot) => [pilot.id, pilot])), [pilots]);
   const combinedStandings = useMemo(

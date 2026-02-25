@@ -3,8 +3,8 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { PilotRecord } from '@/data/pilots';
 import { useActiveEvent } from '@/context/ActiveEventContext';
-import { getEventRuntimeConfig } from '../lib/eventStorage';
 import { loadModuleState, saveModuleState } from '@/lib/eventStateClient';
+import { useEventRuntimeConfig } from '@/lib/event-client';
 
 type NewPilotInput = Omit<PilotRecord, 'id' | 'numeroPiloto'> & {
   id?: string;
@@ -27,12 +27,13 @@ const PilotsContext = createContext<PilotsContextValue | null>(null);
 
 export function PilotsProvider({ children }: { children: React.ReactNode }) {
   const { activeEventId, isHydrated: activeEventHydrated } = useActiveEvent();
+  const runtimeConfig = useEventRuntimeConfig(activeEventId);
   const [pilots, setPilots] = useState<PilotRecord[]>([]);
   const [isHydrated, setIsHydrated] = useState(false);
-  const maxPilots = useMemo(() => getEventRuntimeConfig(activeEventId).maxPilots, [activeEventId]);
+  const maxPilots = runtimeConfig?.maxPilots ?? 0;
 
   useEffect(() => {
-    if (!activeEventHydrated) {
+    if (!activeEventHydrated || !runtimeConfig) {
       return;
     }
 
@@ -54,7 +55,7 @@ export function PilotsProvider({ children }: { children: React.ReactNode }) {
         setIsHydrated(true);
       }
     })();
-  }, [activeEventHydrated, activeEventId]);
+  }, [activeEventHydrated, activeEventId, runtimeConfig]);
 
   useEffect(() => {
     if (!isHydrated || !activeEventHydrated) {
@@ -65,6 +66,10 @@ export function PilotsProvider({ children }: { children: React.ReactNode }) {
   }, [pilots, isHydrated, activeEventHydrated, activeEventId]);
 
   const addPilot = (pilot: NewPilotInput): PilotRecord => {
+    if (!runtimeConfig) {
+      throw new Error('EVENT_CONFIG_NOT_READY');
+    }
+
     if (pilots.length >= maxPilots) {
       throw new Error('MAX_PILOTS_REACHED');
     }

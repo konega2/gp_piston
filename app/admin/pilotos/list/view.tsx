@@ -8,7 +8,7 @@ import { PilotFilters } from '@/components/pilots/PilotFilters';
 import { PilotKart, PilotLevel } from '@/data/pilots';
 import { usePilots } from '@/context/PilotsContext';
 import { useActiveEvent } from '@/context/ActiveEventContext';
-import { getEventRuntimeConfig } from '@/lib/eventStorage';
+import { useEventRuntimeConfig } from '@/lib/event-client';
 
 type LevelFilter = PilotLevel | 'ALL';
 type KartFilter = PilotKart | 'ALL';
@@ -16,10 +16,11 @@ type KartFilter = PilotKart | 'ALL';
 export default function PilotsListPage() {
   const { pilots } = usePilots();
   const { activeEventId } = useActiveEvent();
+  const runtimeConfig = useEventRuntimeConfig(activeEventId);
   const [searchTerm, setSearchTerm] = useState('');
   const [levelFilter, setLevelFilter] = useState<LevelFilter>('ALL');
   const [kartFilter, setKartFilter] = useState<KartFilter>('ALL');
-  const maxPilots = useMemo(() => getEventRuntimeConfig(activeEventId).maxPilots, [activeEventId]);
+  const maxPilots = useMemo(() => runtimeConfig?.maxPilots ?? 0, [runtimeConfig]);
 
   const filteredPilots = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();

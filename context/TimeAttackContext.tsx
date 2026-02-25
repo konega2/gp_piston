@@ -8,8 +8,8 @@ import {
 } from '@/data/timeAttackSessions';
 import { useActiveEvent } from '@/context/ActiveEventContext';
 import { usePilots } from '@/context/PilotsContext';
-import { getEventRuntimeConfig } from '../lib/eventStorage';
 import { loadModuleState, saveModuleState } from '@/lib/eventStateClient';
+import { useEventRuntimeConfig } from '@/lib/event-client';
 
 type LegacyTimeAttackSession = {
   id: string;
@@ -45,22 +45,24 @@ const TimeAttackContext = createContext<TimeAttackContextValue | null>(null);
 export function TimeAttackProvider({ children }: { children: React.ReactNode }) {
   const { activeEventId, isHydrated: activeEventHydrated } = useActiveEvent();
   const { pilots, isHydrated: pilotsHydrated } = usePilots();
+  const runtimeConfig = useEventRuntimeConfig(activeEventId);
 
   const eventConfig = useMemo(() => {
-    const config = getEventRuntimeConfig(activeEventId);
-    return {
-      sessionsCount: config.timeAttackSessions,
-      sessionMaxCapacity: config.sessionMaxCapacity
-    };
-  }, [activeEventId]);
+    if (!runtimeConfig) {
+      return null;
+    }
 
-  const [sessions, setSessions] = useState<TimeAttackSession[]>(
-    createDefaultTimeAttackSessions(eventConfig.sessionMaxCapacity, eventConfig.sessionsCount)
-  );
+    return {
+      sessionsCount: runtimeConfig.timeAttackSessions,
+      sessionMaxCapacity: runtimeConfig.sessionMaxCapacity
+    };
+  }, [runtimeConfig]);
+
+  const [sessions, setSessions] = useState<TimeAttackSession[]>([]);
   const [isHydrated, setIsHydrated] = useState(false);
 
   useEffect(() => {
-    if (!activeEventHydrated || !pilotsHydrated) {
+    if (!activeEventHydrated || !pilotsHydrated || !eventConfig) {
       return;
     }
 
@@ -88,14 +90,7 @@ export function TimeAttackProvider({ children }: { children: React.ReactNode }) 
         setIsHydrated(true);
       }
     })();
-  }, [
-    activeEventHydrated,
-    pilotsHydrated,
-    activeEventId,
-    pilots,
-    eventConfig.sessionMaxCapacity,
-    eventConfig.sessionsCount
-  ]);
+  }, [activeEventHydrated, pilotsHydrated, activeEventId, pilots, eventConfig]);
 
   useEffect(() => {
     if (!isHydrated || !activeEventHydrated) {

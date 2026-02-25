@@ -4,8 +4,8 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { PilotRecord } from '@/data/pilots';
 import { useActiveEvent } from '@/context/ActiveEventContext';
 import { usePilots } from '@/context/PilotsContext';
-import { getEventRuntimeConfig } from '../lib/eventStorage';
 import { loadModuleState, saveModuleState } from '@/lib/eventStateClient';
+import { useEventRuntimeConfig } from '@/lib/event-client';
 
 export type QualySessionName = string;
 export type QualyGroupName = string;
@@ -75,20 +75,24 @@ const ClassificationContext = createContext<ClassificationContextValue | null>(n
 export function ClassificationProvider({ children }: { children: React.ReactNode }) {
   const { activeEventId, isHydrated: activeEventHydrated } = useActiveEvent();
   const { pilots, isHydrated: pilotsHydrated } = usePilots();
+  const runtimeConfig = useEventRuntimeConfig(activeEventId);
 
   const eventConfig = useMemo(() => {
-    const config = getEventRuntimeConfig(activeEventId);
+    if (!runtimeConfig) {
+      return null;
+    }
+
     return {
-      qualyGroups: config.qualyGroups,
-      maxParticipants: config.maxParticipants
+      qualyGroups: runtimeConfig.qualyGroups,
+      maxParticipants: runtimeConfig.maxPilots
     };
-  }, [activeEventId]);
+  }, [runtimeConfig]);
 
   const [qualySessions, setQualySessions] = useState<QualySession[]>([]);
   const [isHydrated, setIsHydrated] = useState(false);
 
   useEffect(() => {
-    if (!pilotsHydrated || !activeEventHydrated) {
+    if (!pilotsHydrated || !activeEventHydrated || !eventConfig) {
       return;
     }
 
@@ -123,7 +127,7 @@ export function ClassificationProvider({ children }: { children: React.ReactNode
         setIsHydrated(true);
       }
     })();
-  }, [pilots, pilotsHydrated, activeEventHydrated, activeEventId, eventConfig.qualyGroups, eventConfig.maxParticipants]);
+  }, [pilots, pilotsHydrated, activeEventHydrated, activeEventId, eventConfig]);
 
   useEffect(() => {
     if (!isHydrated || !activeEventHydrated) {
@@ -171,28 +175,48 @@ export function ClassificationProvider({ children }: { children: React.ReactNode
   };
 
   const recalculateQualyAssignments = () => {
+    if (!eventConfig) {
+      return;
+    }
+
     setQualySessions((prev) => applyAssignmentsByLevel(prev, pilots, eventConfig.qualyGroups, eventConfig.maxParticipants));
   };
 
   const assignQualyByLevel = () => {
+    if (!eventConfig) {
+      return;
+    }
+
     setQualySessions((prev) =>
       applyAssignmentsByPilotOrder(prev, pilots, eventConfig.qualyGroups, eventConfig.maxParticipants, orderPilotsByLevel)
     );
   };
 
   const assignQualyByKart = () => {
+    if (!eventConfig) {
+      return;
+    }
+
     setQualySessions((prev) =>
       applyAssignmentsByPilotOrder(prev, pilots, eventConfig.qualyGroups, eventConfig.maxParticipants, orderPilotsByKart)
     );
   };
 
   const assignQualyRandom = () => {
+    if (!eventConfig) {
+      return;
+    }
+
     setQualySessions((prev) =>
       applyAssignmentsByPilotOrder(prev, pilots, eventConfig.qualyGroups, eventConfig.maxParticipants, shufflePilots)
     );
   };
 
   const applyManualQualyAssignments = (manualAssignments: Record<string, string[]>) => {
+    if (!eventConfig) {
+      return;
+    }
+
     setQualySessions((prev) =>
       applyManualAssignments(prev, pilots, eventConfig.qualyGroups, eventConfig.maxParticipants, manualAssignments)
     );

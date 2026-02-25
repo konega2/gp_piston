@@ -8,9 +8,9 @@ import { useActiveEvent } from '@/context/ActiveEventContext';
 import { useClassification } from '@/context/ClassificationContext';
 import { usePilots } from '@/context/PilotsContext';
 import { useTimeAttackSessions } from '@/context/TimeAttackContext';
-import { getEventRuntimeConfig } from '@/lib/eventStorage';
 import { loadModuleState } from '@/lib/eventStateClient';
 import { EMPTY_RACE_RESULT, normalizeRaceResult, type StoredResults, type TeamRecord } from '@/lib/resultsEngine';
+import { useEventRuntimeConfig } from '@/lib/event-client';
 
 type EventPhaseState = {
   timeAttackCompleted: boolean;
@@ -84,6 +84,7 @@ const phaseConfig: PhaseConfig[] = [
 
 export default function EventStatusPage() {
   const { activeEventId, isHydrated: activeEventHydrated } = useActiveEvent();
+  const runtimeConfig = useEventRuntimeConfig(activeEventId);
   const { pilots, isHydrated: pilotsHydrated } = usePilots();
   const { sessions, isHydrated: timeAttackHydrated } = useTimeAttackSessions();
   const { qualySessions, qualyRecords, isHydrated: qualyHydrated } = useClassification();
@@ -92,7 +93,7 @@ export default function EventStatusPage() {
   const [results, setResults] = useState<StoredResults>(EMPTY_RESULTS);
   const [isStorageHydrated, setIsStorageHydrated] = useState(false);
 
-  const eventConfig = useMemo(() => getEventRuntimeConfig(activeEventId), [activeEventId]);
+  const eventConfig = useMemo(() => runtimeConfig, [runtimeConfig]);
 
   useEffect(() => {
     if (!activeEventHydrated) {
@@ -161,7 +162,7 @@ export default function EventStatusPage() {
     );
 
     const teamsGenerated =
-      teams.length === eventConfig.teamsCount &&
+      teams.length === (eventConfig?.teamsCount ?? 0) &&
       teams.every((team) => Array.isArray(team.members)) &&
       uniqueAssignedPilots.size > 0;
 
@@ -194,7 +195,7 @@ export default function EventStatusPage() {
       resultsFinalized,
       eventClosed
     };
-  }, [assignedQualyPilotIds, pilots, qualyTimesByPilot, race1PointsByPilot, race2PointsByPilot, sessions, teams, eventConfig.teamsCount]);
+  }, [assignedQualyPilotIds, pilots, qualyTimesByPilot, race1PointsByPilot, race2PointsByPilot, sessions, teams, eventConfig?.teamsCount]);
 
   const progressByPhase = useMemo<Record<PhaseKey, boolean>>(
     () => ({

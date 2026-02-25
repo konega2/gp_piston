@@ -34,15 +34,23 @@ const messageFromError = (error: unknown, fallback: string) => {
 };
 
 export async function createEventAction(formData: FormData) {
+  const payload = parseEventFormData(formData);
+
+  let createError: string | null = null;
+
   try {
-    await createEvent(parseEventFormData(formData));
-    revalidatePath('/admin/events');
-    revalidatePath('/admin/events/list');
-    redirect('/admin/events/list?success=Evento+creado+correctamente');
+    await createEvent(payload);
   } catch (error) {
-    const message = messageFromError(error, 'No se pudo crear el evento.');
-    redirect(`/admin/events/create?error=${encodeURIComponent(message)}`);
+    createError = messageFromError(error, 'No se pudo crear el evento.');
   }
+
+  if (createError) {
+    redirect(`/admin/events/create?error=${encodeURIComponent(createError)}`);
+  }
+
+  revalidatePath('/admin/events');
+  revalidatePath('/admin/events/list');
+  redirect('/admin/events/list?success=Evento+creado+correctamente');
 }
 
 export async function updateEventAction(formData: FormData) {

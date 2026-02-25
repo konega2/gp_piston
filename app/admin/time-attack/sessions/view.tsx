@@ -6,12 +6,13 @@ import { Sidebar } from '@/components/layout/Sidebar';
 import { useActiveEvent } from '@/context/ActiveEventContext';
 import { SessionCard } from '@/components/timeattack/SessionCard';
 import { useTimeAttackSessions } from '@/context/TimeAttackContext';
-import { getEventById } from '@/lib/eventStorage';
+import { useEventName } from '@/lib/event-client';
 
 export default function TimeAttackSessionsPage() {
   const { activeEventId, isHydrated: activeEventHydrated } = useActiveEvent();
+  const eventNameFromDb = useEventName(activeEventId);
   const { sessions, closeSession, isHydrated } = useTimeAttackSessions();
-  const eventName = activeEventHydrated ? getEventById(activeEventId)?.name ?? 'Evento' : 'Evento';
+  const eventName = activeEventHydrated ? eventNameFromDb ?? 'Evento' : 'Evento';
   const firstSession = sessions[0]?.name ?? 'T1';
   const lastSession = sessions[sessions.length - 1]?.name ?? 'T1';
   const maxCapacity = sessions[0]?.maxCapacity ?? 0;

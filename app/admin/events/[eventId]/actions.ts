@@ -34,6 +34,62 @@ import {
   type QualySessionDB,
   type TimeAttackSessionDB
 } from '@/lib/sessions';
+import { getEventById } from '@/lib/events';
+
+type EventRuntimeConfig = {
+  maxPilots: number;
+  sessionMaxCapacity: number;
+  timeAttackSessions: number;
+  qualyGroups: number;
+  teamsCount: number;
+  raceCount: number;
+};
+
+function toPositiveInt(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+
+  return Math.floor(value);
+}
+
+function parseRuntimeConfig(config: unknown): EventRuntimeConfig | null {
+  if (!config || typeof config !== 'object') {
+    return null;
+  }
+
+  const safe = config as {
+    maxPilots?: number;
+    maxParticipants?: number;
+    sessionMaxCapacity?: number;
+    timeAttackSessions?: number;
+    qualyGroups?: number;
+    teamsCount?: number;
+    raceCount?: number;
+    racesCount?: number;
+  };
+
+  const maxPilots = toPositiveInt(safe.maxPilots ?? safe.maxParticipants);
+  const timeAttackSessions = toPositiveInt(safe.timeAttackSessions);
+  const qualyGroups = toPositiveInt(safe.qualyGroups);
+  const teamsCount = toPositiveInt(safe.teamsCount);
+  const raceCount = toPositiveInt(safe.raceCount ?? safe.racesCount);
+
+  if (!maxPilots || !timeAttackSessions || !qualyGroups || !teamsCount || !raceCount) {
+    return null;
+  }
+
+  const sessionMaxCapacity = toPositiveInt(safe.sessionMaxCapacity) ?? maxPilots;
+
+  return {
+    maxPilots,
+    sessionMaxCapacity,
+    timeAttackSessions,
+    qualyGroups,
+    teamsCount,
+    raceCount
+  };
+}
 
 const revalidateEventPaths = (eventId: string) => {
   revalidatePath(`/admin/events/${eventId}`);
@@ -45,6 +101,37 @@ export async function getEventModuleStateAction(eventId: string, moduleKey: Even
     return await getEventModulePayload(eventId, moduleKey);
   } catch {
     return null;
+  }
+}
+
+export async function getEventInfoAction(eventId: string) {
+  try {
+    const event = await getEventById(eventId);
+    if (!event) {
+      return {
+        exists: false,
+        name: null,
+        location: null,
+        date: null,
+        config: null
+      };
+    }
+
+    return {
+      exists: true,
+      name: event.name,
+      location: event.location,
+      date: event.date,
+      config: parseRuntimeConfig(event.config)
+    };
+  } catch {
+    return {
+      exists: false,
+      name: null,
+      location: null,
+      date: null,
+      config: null
+    };
   }
 }
 

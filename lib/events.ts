@@ -93,6 +93,7 @@ export async function createEvent(data: EventInput): Promise<string> {
     qualyGroups: data.qualyGroups,
     teamsCount: data.teamsCount,
     raceCount: data.raceCount,
+    racesCount: data.raceCount,
     sessionMaxCapacity: data.sessionMaxCapacity
   };
 
@@ -117,6 +118,7 @@ export async function updateEvent(id: string, data: EventInput): Promise<void> {
     qualyGroups: data.qualyGroups,
     teamsCount: data.teamsCount,
     raceCount: data.raceCount,
+    racesCount: data.raceCount,
     sessionMaxCapacity: data.sessionMaxCapacity
   };
 
