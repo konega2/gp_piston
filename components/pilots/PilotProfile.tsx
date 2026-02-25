@@ -19,6 +19,7 @@ export function PilotProfile({ pilot }: PilotProfileProps) {
   const [draftData, setDraftData] = useState<PilotRecord>(pilot);
   const [isEditMode, setIsEditMode] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
+  const [validationError, setValidationError] = useState('');
 
   const fullName = `${profileData.nombre} ${profileData.apellidos}`;
   const initials = useMemo(
@@ -30,20 +31,50 @@ export function PilotProfile({ pilot }: PilotProfileProps) {
     setDraftData(profileData);
     setIsEditMode(true);
     setStatusMessage('');
+    setValidationError('');
   };
 
   const cancelEditMode = () => {
     setDraftData(profileData);
     setIsEditMode(false);
     setStatusMessage('Edición cancelada. Registro restaurado.');
+    setValidationError('');
   };
 
   const saveChanges = () => {
-    updatePilot(profileData.id, draftData);
-    setProfileData(draftData);
-    setIsEditMode(false);
-    setStatusMessage('Cambios guardados en estado local (mock).');
-    console.log('GP PISTÓN | Cambios de piloto (mock):', draftData);
+    setStatusMessage('');
+    setValidationError('');
+
+    const normalizedPhone = draftData.telefono.replace(/\D/g, '').slice(0, 9);
+    const normalizedDraft: PilotRecord = {
+      ...draftData,
+      nombre: draftData.nombre.trim(),
+      apellidos: draftData.apellidos.trim(),
+      telefono: normalizedPhone,
+      redesSociales: draftData.redesSociales.trim()
+    };
+
+    const draftError = validatePilotDraft(normalizedDraft);
+    if (draftError) {
+      setValidationError(draftError);
+      return;
+    }
+
+    try {
+      updatePilot(profileData.id, normalizedDraft);
+      setProfileData(normalizedDraft);
+      setDraftData(normalizedDraft);
+      setIsEditMode(false);
+      setStatusMessage('Cambios guardados correctamente.');
+      console.log('GP PISTÓN | Cambios de piloto (mock):', normalizedDraft);
+    } catch (error) {
+      if (error instanceof Error && error.message) {
+        setValidationError(error.message);
+        return;
+      }
+
+      setValidationError('No se pudieron guardar los cambios del piloto.');
+    }
   };
 
   const handleDeletePilot = () => {
@@ -112,6 +143,10 @@ export function PilotProfile({ pilot }: PilotProfileProps) {
 
       {statusMessage ? (
         <div className="rounded-xl border border-white/15 bg-white/[0.03] px-4 py-3 text-sm text-gp-textSoft">{statusMessage}</div>
+      ) : null}
+
+      {validationError ? (
+        <div className="rounded-xl border border-gp-racingRed/45 bg-gp-racingRed/10 px-4 py-3 text-sm text-red-200">{validationError}</div>
       ) : null}
 
       <section
@@ -234,14 +269,22 @@ export function PilotProfile({ pilot }: PilotProfileProps) {
             editMode={isEditMode}
             inputType="number"
             inputValue={String(draftData.edad)}
-            onInputChange={(value) => setDraftData((prev) => ({ ...prev, edad: Number(value) > 0 ? Number(value) : 0 }))}
+            min={18}
+            max={80}
+            onInputChange={(value) =>
+              setDraftData((prev) => ({ ...prev, edad: Number(value) > 0 ? Math.floor(Number(value)) : 0 }))
+            }
           />
           <InfoItem
             label="Teléfono"
             value={profileData.telefono}
             editMode={isEditMode}
             inputValue={draftData.telefono}
-            onInputChange={(value) => setDraftData((prev) => ({ ...prev, telefono: value }))}
+            minLength={9}
+            maxLength={9}
+            pattern="\\d{9}"
+            inputMode="numeric"
+            onInputChange={(value) => setDraftData((prev) => ({ ...prev, telefono: value.replace(/\D/g, '').slice(0, 9) }))}
           />
           <InfoItem
             label="Redes sociales"
@@ -256,6 +299,9 @@ export function PilotProfile({ pilot }: PilotProfileProps) {
             editMode={isEditMode}
             inputType="number"
             inputValue={draftData.peso === null ? '' : String(draftData.peso)}
+            min={40}
+            max={150}
+            step={0.1}
             onInputChange={(value) => setDraftData((prev) => ({ ...prev, peso: value.trim() === '' ? null : Number(value) }))}
           />
         </InfoPanel>
@@ -320,15 +366,43 @@ type InfoItemProps = {
   inputValue?: string;
   inputType?: 'text' | 'number';
   onInputChange?: (value: string) => void;
+  min?: number;
+  max?: number;
+  step?: number;
+  minLength?: number;
+  maxLength?: number;
+  pattern?: string;
+  inputMode?: 'text' | 'numeric' | 'decimal';
 };
 
-function InfoItem({ label, value, editMode, inputValue = '', inputType = 'text', onInputChange }: InfoItemProps) {
+function InfoItem({
+  label,
+  value,
+  editMode,
+  inputValue = '',
+  inputType = 'text',
+  onInputChange,
+  min,
+  max,
+  step,
+  minLength,
+  maxLength,
+  pattern,
+  inputMode
+}: InfoItemProps) {
   return (
     <div className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
       <span className="text-xs uppercase tracking-[0.12em] text-gp-textSoft">{label}</span>
       {editMode && onInputChange ? (
         <input
           type={inputType}
+          min={min}
+          max={max}
+          step={step}
+          minLength={minLength}
+          maxLength={maxLength}
+          pattern={pattern}
+          inputMode={inputMode}
           value={inputValue}
           onChange={(event) => onInputChange(event.target.value)}
           className="h-8 w-40 rounded-md border border-white/15 bg-[#0E141F] px-2 text-right text-sm text-white outline-none transition-all duration-200 focus:border-gp-racingRed/65 focus:shadow-input-red"
@@ -413,18 +487,50 @@ type TechnicalInputProps = {
   onChange: (value: string) => void;
   type?: 'text' | 'number';
   className?: string;
+  min?: number;
+  max?: number;
+  step?: number;
 };
 
-function TechnicalInput({ label, value, onChange, type = 'text', className = '' }: TechnicalInputProps) {
+function TechnicalInput({ label, value, onChange, type = 'text', className = '', min, max, step }: TechnicalInputProps) {
   return (
     <label className={`block ${className}`}>
       <span className="mb-2 block text-[11px] uppercase tracking-[0.13em] text-gp-textSoft">{label}</span>
       <input
         type={type}
+        min={min}
+        max={max}
+        step={step}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         className="h-10 w-full rounded-lg border border-white/15 bg-[#0E141F] px-3 text-sm text-white outline-none transition-all duration-200 focus:border-gp-racingRed/65 focus:shadow-input-red"
       />
     </label>
   );
+}
+
+function validatePilotDraft(pilot: PilotRecord): string | null {
+  if (pilot.nombre.trim().length === 0) {
+    return 'El nombre es obligatorio.';
+  }
+
+  if (pilot.apellidos.trim().length === 0) {
+    return 'Los apellidos son obligatorios.';
+  }
+
+  if (!Number.isInteger(pilot.edad) || pilot.edad < 18 || pilot.edad > 80) {
+    return 'La edad debe ser un número entero entre 18 y 80.';
+  }
+
+  if (!/^\d{9}$/.test(pilot.telefono.trim())) {
+    return 'El teléfono debe tener exactamente 9 dígitos numéricos.';
+  }
+
+  if (pilot.peso !== null) {
+    if (!Number.isFinite(pilot.peso) || pilot.peso < 40 || pilot.peso > 150) {
+      return 'El peso debe estar entre 40 y 150 kg.';
+    }
+  }
+
+  return null;
 }
