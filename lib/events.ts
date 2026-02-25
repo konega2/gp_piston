@@ -1,5 +1,27 @@
 import { sql } from '@/lib/db';
 
+let eventsTableReady: Promise<void> | null = null;
+
+async function ensureEventsTable() {
+  if (!eventsTableReady) {
+    eventsTableReady = (async () => {
+      await sql`
+        CREATE TABLE IF NOT EXISTS events (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          location TEXT,
+          date DATE,
+          status TEXT NOT NULL CHECK (status IN ('draft', 'active', 'closed')),
+          config JSONB NOT NULL DEFAULT '{}'::jsonb,
+          created_at TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+      `;
+    })();
+  }
+
+  await eventsTableReady;
+}
+
 export type EventRow = {
   id: string;
   name: string;
@@ -49,17 +71,20 @@ const ensureValidEventInput = (data: EventInput) => {
 };
 
 export async function getEvents(): Promise<EventRow[]> {
+  await ensureEventsTable();
   const { rows } = await sql<EventRow>`SELECT * FROM events ORDER BY created_at DESC;`;
   return rows;
 }
 
 export async function getEventById(id: string): Promise<EventRow | null> {
+  await ensureEventsTable();
   const { rows } = await sql<EventRow>`SELECT * FROM events WHERE id = ${id} LIMIT 1;`;
   return rows[0] ?? null;
 }
 
 export async function createEvent(data: EventInput): Promise<string> {
   ensureValidEventInput(data);
+  await ensureEventsTable();
 
   const id = crypto.randomUUID();
   const config = {
@@ -84,6 +109,7 @@ export async function createEvent(data: EventInput): Promise<string> {
 
 export async function updateEvent(id: string, data: EventInput): Promise<void> {
   ensureValidEventInput(data);
+  await ensureEventsTable();
 
   const config = {
     maxPilots: data.maxParticipants,
@@ -110,6 +136,7 @@ export async function updateEvent(id: string, data: EventInput): Promise<void> {
 }
 
 export async function deleteEvent(id: string): Promise<void> {
+  await ensureEventsTable();
   try {
     await sql`DELETE FROM events WHERE id = ${id};`;
   } catch {
