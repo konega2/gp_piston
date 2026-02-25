@@ -33,6 +33,10 @@ const messageFromError = (error: unknown, fallback: string) => {
   return fallback;
 };
 
+const isNextRedirectError = (error: unknown) => {
+  return error instanceof Error && error.message === 'NEXT_REDIRECT';
+};
+
 export async function createEventAction(formData: FormData) {
   const payload = parseEventFormData(formData);
 
@@ -41,6 +45,10 @@ export async function createEventAction(formData: FormData) {
   try {
     await createEvent(payload);
   } catch (error) {
+    if (isNextRedirectError(error)) {
+      throw error;
+    }
+
     createError = messageFromError(error, 'No se pudo crear el evento.');
   }
 
@@ -60,16 +68,26 @@ export async function updateEventAction(formData: FormData) {
     redirect('/admin/events/list?error=Evento+no+v%C3%A1lido');
   }
 
+  let updateError: string | null = null;
+
   try {
     await updateEvent(eventId, parseEventFormData(formData));
-    revalidatePath('/admin/events');
-    revalidatePath('/admin/events/list');
-    revalidatePath(`/admin/events/edit/${eventId}`);
-    redirect('/admin/events/list?success=Evento+actualizado+correctamente');
   } catch (error) {
-    const message = messageFromError(error, 'No se pudo actualizar el evento.');
-    redirect(`/admin/events/edit/${eventId}?error=${encodeURIComponent(message)}`);
+    if (isNextRedirectError(error)) {
+      throw error;
+    }
+
+    updateError = messageFromError(error, 'No se pudo actualizar el evento.');
   }
+
+  if (updateError) {
+    redirect(`/admin/events/edit/${eventId}?error=${encodeURIComponent(updateError)}`);
+  }
+
+  revalidatePath('/admin/events');
+  revalidatePath('/admin/events/list');
+  revalidatePath(`/admin/events/edit/${eventId}`);
+  redirect('/admin/events/list?success=Evento+actualizado+correctamente');
 }
 
 export async function deleteEventAction(formData: FormData) {
@@ -79,13 +97,23 @@ export async function deleteEventAction(formData: FormData) {
     redirect('/admin/events/list?error=Evento+no+v%C3%A1lido');
   }
 
+  let deleteError: string | null = null;
+
   try {
     await deleteEvent(eventId);
-    revalidatePath('/admin/events');
-    revalidatePath('/admin/events/list');
-    redirect('/admin/events/list?success=Evento+eliminado+correctamente');
   } catch (error) {
-    const message = messageFromError(error, 'No se pudo eliminar el evento.');
-    redirect(`/admin/events/list?error=${encodeURIComponent(message)}`);
+    if (isNextRedirectError(error)) {
+      throw error;
+    }
+
+    deleteError = messageFromError(error, 'No se pudo eliminar el evento.');
   }
+
+  if (deleteError) {
+    redirect(`/admin/events/list?error=${encodeURIComponent(deleteError)}`);
+  }
+
+  revalidatePath('/admin/events');
+  revalidatePath('/admin/events/list');
+  redirect('/admin/events/list?success=Evento+eliminado+correctamente');
 }
