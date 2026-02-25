@@ -10,6 +10,8 @@ type NewPilotInput = Omit<PilotRecord, 'id' | 'numeroPiloto'> & {
   id?: string;
 };
 
+const PHONE_REGEX = /^\d{9}$/;
+
 type LegacyPilotRecord = Omit<PilotRecord, 'hasTimeAttack'> & {
   hasTimeAttack?: boolean;
   tandas?: string[];
@@ -70,6 +72,8 @@ export function PilotsProvider({ children }: { children: React.ReactNode }) {
       throw new Error('EVENT_CONFIG_NOT_READY');
     }
 
+    validatePilotData(pilot);
+
     if (pilots.length >= maxPilots) {
       throw new Error('MAX_PILOTS_REACHED');
     }
@@ -88,6 +92,8 @@ export function PilotsProvider({ children }: { children: React.ReactNode }) {
   };
 
   const updatePilot = (id: string, updatedPilot: PilotRecord) => {
+    validatePilotData(updatedPilot);
+
     setPilots((prev) => {
       const numberIsTaken = prev.some((pilot) => pilot.id !== id && pilot.numeroPiloto === updatedPilot.numeroPiloto);
       const safePilot = numberIsTaken
@@ -139,4 +145,29 @@ function normalizePilotRecord(pilot: LegacyPilotRecord): PilotRecord {
     ...rest,
     hasTimeAttack: typeof hasTimeAttack === 'boolean' ? hasTimeAttack : hasTimeAttackFromLegacy
   };
+}
+
+function validatePilotData(pilot: Pick<PilotRecord, 'nombre' | 'apellidos' | 'edad' | 'telefono' | 'peso'>) {
+  if (pilot.nombre.trim().length === 0) {
+    throw new Error('El nombre es obligatorio.');
+  }
+
+  if (pilot.apellidos.trim().length === 0) {
+    throw new Error('Los apellidos son obligatorios.');
+  }
+
+  if (!Number.isInteger(pilot.edad) || pilot.edad < 18 || pilot.edad > 80) {
+    throw new Error('La edad debe ser un número entero entre 18 y 80.');
+  }
+
+  const phone = pilot.telefono.trim();
+  if (!PHONE_REGEX.test(phone)) {
+    throw new Error('El teléfono debe tener exactamente 9 dígitos numéricos.');
+  }
+
+  if (pilot.peso !== null) {
+    if (!Number.isFinite(pilot.peso) || pilot.peso < 40 || pilot.peso > 150) {
+      throw new Error('El peso debe estar entre 40 y 150 kg.');
+    }
+  }
 }

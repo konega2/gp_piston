@@ -26,6 +26,8 @@ const initialPersonalInfo: PersonalInfo = {
   weight: ''
 };
 
+const PHONE_REGEX = /^\d{9}$/;
+
 export function CreatePilotForm() {
   const router = useRouter();
   const { activeEventId } = useActiveEvent();
@@ -66,6 +68,12 @@ export function CreatePilotForm() {
   }, [personalInfo.age, personalInfo.lastName, personalInfo.name, personalInfo.phone]);
 
   const updatePersonalInfo = (field: keyof PersonalInfo, value: string) => {
+    if (field === 'phone') {
+      const normalizedPhone = value.replace(/\D/g, '').slice(0, 9);
+      setPersonalInfo((prev) => ({ ...prev, [field]: normalizedPhone }));
+      return;
+    }
+
     setPersonalInfo((prev) => ({ ...prev, [field]: value }));
   };
 
@@ -107,6 +115,12 @@ export function CreatePilotForm() {
     setFeedbackMessage('');
     setValidationError('');
 
+    const personalInfoError = validatePersonalInfo(personalInfo);
+    if (personalInfoError) {
+      setValidationError(personalInfoError);
+      return;
+    }
+
     if (!skillLevel) {
       setValidationError('Selecciona el nivel de habilidad del piloto.');
       return;
@@ -123,14 +137,16 @@ export function CreatePilotForm() {
     }
 
     try {
+      const parsedAge = Number(personalInfo.age);
+      const parsedWeight = personalInfo.weight.trim() ? Number(personalInfo.weight) : null;
       const photoDataUrl = photoFile ? await fileToDataUrl(photoFile) : null;
       const createdPilot = addPilot({
         nombre: personalInfo.name.trim(),
         apellidos: personalInfo.lastName.trim(),
-        edad: Number(personalInfo.age) || 0,
+        edad: parsedAge,
         telefono: personalInfo.phone.trim(),
         redesSociales: personalInfo.social.trim(),
-        peso: personalInfo.weight.trim() ? Number(personalInfo.weight) : null,
+        peso: parsedWeight,
         nivel: skillLevelToLevel(skillLevel),
         hasTimeAttack,
         kart: kartType,
@@ -143,6 +159,11 @@ export function CreatePilotForm() {
     } catch (error) {
       if (error instanceof Error && error.message === 'MAX_PILOTS_REACHED') {
         setValidationError('Se alcanzó el máximo de participantes para este evento.');
+        return;
+      }
+
+      if (error instanceof Error && error.message) {
+        setValidationError(error.message);
         return;
       }
 
@@ -177,7 +198,8 @@ export function CreatePilotForm() {
             label="Edad"
             required
             type="number"
-            min="1"
+            min="18"
+            max="80"
             value={personalInfo.age}
             onChange={(value) => updatePersonalInfo('age', value)}
             placeholder="Edad"
@@ -187,7 +209,11 @@ export function CreatePilotForm() {
             required
             value={personalInfo.phone}
             onChange={(value) => updatePersonalInfo('phone', value)}
-            placeholder="+34 000 000 000"
+            placeholder="600000000"
+            pattern="\\d{9}"
+            minLength={9}
+            maxLength={9}
+            inputMode="numeric"
           />
           <TechnicalInput
             label="Usuario en redes sociales"
@@ -197,9 +223,13 @@ export function CreatePilotForm() {
           />
           <TechnicalInput
             label="Peso"
+            type="number"
             value={personalInfo.weight}
             onChange={(value) => updatePersonalInfo('weight', value)}
             placeholder="Kg"
+            min="40"
+            max="150"
+            step="0.1"
           />
         </div>
       </FormSection>
@@ -397,6 +427,12 @@ type TechnicalInputProps = {
   required?: boolean;
   type?: 'text' | 'number';
   min?: string;
+  max?: string;
+  step?: string;
+  minLength?: number;
+  maxLength?: number;
+  inputMode?: 'text' | 'numeric' | 'decimal';
+  pattern?: string;
 };
 
 function TechnicalInput({
@@ -406,7 +442,13 @@ function TechnicalInput({
   placeholder,
   required = false,
   type = 'text',
-  min
+  min,
+  max,
+  step,
+  minLength,
+  maxLength,
+  inputMode,
+  pattern
 }: TechnicalInputProps) {
   return (
     <label className="block">
@@ -416,6 +458,12 @@ function TechnicalInput({
       <input
         type={type}
         min={min}
+        max={max}
+        step={step}
+        minLength={minLength}
+        maxLength={maxLength}
+        inputMode={inputMode}
+        pattern={pattern}
         value={value}
         required={required}
         onChange={(event) => onChange(event.target.value)}
@@ -424,6 +472,49 @@ function TechnicalInput({
       />
     </label>
   );
+}
+
+function validatePersonalInfo(personalInfo: PersonalInfo): string | null {
+  const missingFields: string[] = [];
+
+  if (personalInfo.name.trim().length === 0) {
+    missingFields.push('Nombre');
+  }
+
+  if (personalInfo.lastName.trim().length === 0) {
+    missingFields.push('Apellidos');
+  }
+
+  if (personalInfo.age.trim().length === 0) {
+    missingFields.push('Edad');
+  }
+
+  if (personalInfo.phone.trim().length === 0) {
+    missingFields.push('Teléfono');
+  }
+
+  if (missingFields.length > 0) {
+    return `Faltan campos obligatorios: ${missingFields.join(', ')}.`;
+  }
+
+  const age = Number(personalInfo.age);
+  if (!Number.isInteger(age) || age < 18 || age > 80) {
+    return 'La edad debe ser un número entero entre 18 y 80.';
+  }
+
+  const phone = personalInfo.phone.trim();
+  if (!PHONE_REGEX.test(phone)) {
+    return 'El teléfono debe tener exactamente 9 dígitos numéricos.';
+  }
+
+  if (personalInfo.weight.trim().length > 0) {
+    const weight = Number(personalInfo.weight);
+    if (!Number.isFinite(weight) || weight < 40 || weight > 150) {
+      return 'El peso debe estar entre 40 y 150 kg.';
+    }
+  }
+
+  return null;
 }
 
 type ChoiceCardProps = {
