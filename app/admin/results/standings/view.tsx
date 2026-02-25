@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Header } from '@/components/layout/Header';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { useActiveEvent } from '@/context/ActiveEventContext';
-import { loadEventStorageItem } from '@/lib/eventStorage';
+import { loadModuleState } from '@/lib/eventStateClient';
 import {
   EMPTY_RACE_RESULT,
   buildIndividualStandings,
@@ -17,10 +17,6 @@ import {
   type StoredResults,
   type TeamRecord
 } from '@/lib/resultsEngine';
-
-const RESULTS_STORAGE_KEY = 'results';
-const TEAMS_STORAGE_KEY = 'teams';
-const RACES_STORAGE_KEY = 'races';
 
 type StoredRaces = {
   race1: RaceGrid | null;
@@ -41,32 +37,24 @@ export default function ResultsStandingsPage() {
 
     setIsHydrated(false);
 
-    try {
-      const rawResults = loadEventStorageItem(RESULTS_STORAGE_KEY, activeEventId);
-      if (rawResults) {
-        const parsedResults = JSON.parse(rawResults) as StoredResults;
+    void (async () => {
+      try {
+        const parsedResults = await loadModuleState<StoredResults>(activeEventId, 'results', {
+          race1: EMPTY_RACE_RESULT,
+          race2: EMPTY_RACE_RESULT
+        });
         setResults({
           race1: normalizeRaceResult(parsedResults?.race1),
           race2: normalizeRaceResult(parsedResults?.race2)
         });
-      } else {
-        setResults({ race1: EMPTY_RACE_RESULT, race2: EMPTY_RACE_RESULT });
-      }
 
-      const rawRaces = loadEventStorageItem(RACES_STORAGE_KEY, activeEventId);
-      if (rawRaces) {
-        const parsedRaces = JSON.parse(rawRaces) as StoredRaces;
+        const parsedRaces = await loadModuleState<StoredRaces>(activeEventId, 'races', { race1: null, race2: null });
         setRaces({
           race1: isRaceGrid(parsedRaces?.race1) ? parsedRaces.race1 : null,
           race2: isRaceGrid(parsedRaces?.race2) ? parsedRaces.race2 : null
         });
-      } else {
-        setRaces({ race1: null, race2: null });
-      }
 
-      const rawTeams = loadEventStorageItem(TEAMS_STORAGE_KEY, activeEventId);
-      if (rawTeams) {
-        const parsedTeams = JSON.parse(rawTeams) as TeamRecord[];
+        const parsedTeams = await loadModuleState<TeamRecord[]>(activeEventId, 'teams', []);
         if (Array.isArray(parsedTeams)) {
           setTeams(
             parsedTeams
@@ -80,13 +68,13 @@ export default function ResultsStandingsPage() {
                 members: Array.from(new Set(team.members.filter((pilotId): pilotId is string => typeof pilotId === 'string')))
               }))
           );
+        } else {
+          setTeams([]);
         }
-      } else {
-        setTeams([]);
+      } finally {
+        setIsHydrated(true);
       }
-    } finally {
-      setIsHydrated(true);
-    }
+    })();
   }, [activeEventHydrated, activeEventId]);
 
   const race1Entries = useMemo(

@@ -8,7 +8,8 @@ import {
 } from '@/data/timeAttackSessions';
 import { useActiveEvent } from '@/context/ActiveEventContext';
 import { usePilots } from '@/context/PilotsContext';
-import { getEventRuntimeConfig, loadEventStorageItem, saveEventStorageItem } from '@/lib/eventStorage';
+import { getEventRuntimeConfig } from '../lib/eventStorage';
+import { loadModuleState, saveModuleState } from '@/lib/eventStateClient';
 
 type LegacyTimeAttackSession = {
   id: string;
@@ -39,8 +40,6 @@ type TimeAttackContextValue = {
   saveSessionTimes: (input: SaveSessionTimesInput) => { ok: boolean; reason?: 'closed' | 'not-found' };
 };
 
-const STORAGE_KEY = 'timeAttack';
-
 const TimeAttackContext = createContext<TimeAttackContextValue | null>(null);
 
 export function TimeAttackProvider({ children }: { children: React.ReactNode }) {
@@ -67,28 +66,28 @@ export function TimeAttackProvider({ children }: { children: React.ReactNode }) 
 
     setIsHydrated(false);
 
-    try {
-      const raw = loadEventStorageItem(STORAGE_KEY, activeEventId);
-      if (!raw) {
+    void (async () => {
+      try {
+        const stored = await loadModuleState<LegacyTimeAttackSession[]>(activeEventId, 'timeAttack', []);
+        if (!Array.isArray(stored) || stored.length === 0) {
+          const initialSessions = createDefaultTimeAttackSessions(eventConfig.sessionMaxCapacity, eventConfig.sessionsCount);
+          const recalculated = recalculateCorrectedTimes(sortSessions(initialSessions));
+          setSessions(recalculated);
+          await saveModuleState(activeEventId, 'timeAttack', recalculated);
+          return;
+        }
+
+        const normalized = normalizeSessions(stored, pilots, eventConfig.sessionMaxCapacity, eventConfig.sessionsCount);
+        setSessions(recalculateCorrectedTimes(sortSessions(normalized)));
+      } catch {
         const initialSessions = createDefaultTimeAttackSessions(eventConfig.sessionMaxCapacity, eventConfig.sessionsCount);
         const recalculated = recalculateCorrectedTimes(sortSessions(initialSessions));
         setSessions(recalculated);
-        saveEventStorageItem(STORAGE_KEY, activeEventId, JSON.stringify(recalculated));
+        await saveModuleState(activeEventId, 'timeAttack', recalculated);
+      } finally {
         setIsHydrated(true);
-        return;
       }
-
-      const parsed = JSON.parse(raw) as LegacyTimeAttackSession[];
-      const normalized = normalizeSessions(parsed, pilots, eventConfig.sessionMaxCapacity, eventConfig.sessionsCount);
-      setSessions(recalculateCorrectedTimes(sortSessions(normalized)));
-    } catch {
-      const fallback = createDefaultTimeAttackSessions(eventConfig.sessionMaxCapacity, eventConfig.sessionsCount);
-      const recalculated = recalculateCorrectedTimes(sortSessions(fallback));
-      setSessions(recalculated);
-      saveEventStorageItem(STORAGE_KEY, activeEventId, JSON.stringify(recalculated));
-    } finally {
-      setIsHydrated(true);
-    }
+    })();
   }, [
     activeEventHydrated,
     pilotsHydrated,
@@ -103,7 +102,7 @@ export function TimeAttackProvider({ children }: { children: React.ReactNode }) 
       return;
     }
 
-    saveEventStorageItem(STORAGE_KEY, activeEventId, JSON.stringify(sessions));
+    void saveModuleState(activeEventId, 'timeAttack', sessions);
   }, [sessions, isHydrated, activeEventHydrated, activeEventId]);
 
   const closeSession = (sessionId: string) => {

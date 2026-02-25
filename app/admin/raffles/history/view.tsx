@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Header } from '@/components/layout/Header';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { useActiveEvent } from '@/context/ActiveEventContext';
-import { loadEventStorageItem } from '@/lib/eventStorage';
+import { loadModuleState } from '@/lib/eventStateClient';
 
 type RaffleHistoryEntry = {
   raffleId: string;
@@ -14,8 +14,6 @@ type RaffleHistoryEntry = {
   winnerName: string;
   date: number;
 };
-
-const RAFFLES_HISTORY_STORAGE_KEY = 'rafflesHistory';
 
 export default function RafflesHistoryPage() {
   const { activeEventId, isHydrated: activeEventHydrated } = useActiveEvent();
@@ -29,18 +27,14 @@ export default function RafflesHistoryPage() {
 
     setIsHydrated(false);
 
-    try {
-      const raw = loadEventStorageItem(RAFFLES_HISTORY_STORAGE_KEY, activeEventId);
-      if (!raw) {
-        setHistory([]);
-        return;
+    void (async () => {
+      try {
+        const parsed = await loadModuleState<unknown>(activeEventId, 'rafflesHistory', []);
+        setHistory(normalizeHistory(parsed));
+      } finally {
+        setIsHydrated(true);
       }
-
-      const parsed = JSON.parse(raw) as unknown;
-      setHistory(normalizeHistory(parsed));
-    } finally {
-      setIsHydrated(true);
-    }
+    })();
   }, [activeEventHydrated, activeEventId]);
 
   const sortedHistory = useMemo(() => [...history].sort((a, b) => b.date - a.date), [history]);

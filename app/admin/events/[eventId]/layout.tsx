@@ -2,9 +2,8 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { useActiveEvent } from '@/context/ActiveEventContext';
-import { loadEvents } from '@/lib/eventStorage';
 
 type EventLayoutProps = {
   children: React.ReactNode;
@@ -27,20 +26,11 @@ const navItems = [
 
 export default function EventAdminLayout({ children, params }: EventLayoutProps) {
   const pathname = usePathname();
-  const router = useRouter();
   const { setActiveEventId } = useActiveEvent();
 
   useEffect(() => {
-    const events = loadEvents();
-    const exists = events.some((event) => event.id === params.eventId);
-
-    if (!exists) {
-      router.replace('/admin/events/list');
-      return;
-    }
-
     setActiveEventId(params.eventId);
-  }, [params.eventId, router, setActiveEventId]);
+  }, [params.eventId, setActiveEventId]);
 
   const activeKey = useMemo(() => {
     if (pathname.includes('/event-status')) return 'event-status';

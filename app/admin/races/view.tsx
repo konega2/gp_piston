@@ -8,7 +8,7 @@ import { useActiveEvent } from '@/context/ActiveEventContext';
 import { useClassification } from '@/context/ClassificationContext';
 import { usePilots } from '@/context/PilotsContext';
 import { useTimeAttackSessions } from '@/context/TimeAttackContext';
-import { loadEventStorageItem, saveEventStorageItem } from '@/lib/eventStorage';
+import { loadModuleState, saveModuleState } from '@/lib/eventStateClient';
 import { buildCombinedStandings } from '@/lib/combinedStandings';
 
 type RacePilot = {
@@ -39,9 +39,6 @@ type TeamRecord = {
   name: string;
   members: string[];
 };
-
-const RACES_STORAGE_KEY = 'races';
-const TEAMS_STORAGE_KEY = 'teams';
 
 export default function RacesPage() {
   const { activeEventId, isHydrated: activeEventHydrated } = useActiveEvent();
@@ -87,10 +84,9 @@ export default function RacesPage() {
 
     setIsHydrated(false);
 
-    try {
-      const rawTeams = loadEventStorageItem(TEAMS_STORAGE_KEY, activeEventId);
-      if (rawTeams) {
-        const parsedTeams = JSON.parse(rawTeams) as TeamRecord[];
+    void (async () => {
+      try {
+        const parsedTeams = await loadModuleState<TeamRecord[]>(activeEventId, 'teams', []);
         if (Array.isArray(parsedTeams)) {
           setTeams(
             parsedTeams
@@ -104,24 +100,19 @@ export default function RacesPage() {
                 members: Array.from(new Set(team.members.filter((pilotId): pilotId is string => typeof pilotId === 'string')))
               }))
           );
+        } else {
+          setTeams([]);
         }
-      } else {
-        setTeams([]);
-      }
 
-      const rawRaces = loadEventStorageItem(RACES_STORAGE_KEY, activeEventId);
-      if (rawRaces) {
-        const parsedRaces = JSON.parse(rawRaces) as StoredRaces;
+        const parsedRaces = await loadModuleState<StoredRaces>(activeEventId, 'races', { race1: null, race2: null });
         setStoredRaces({
           race1: isRaceGrid(parsedRaces?.race1) ? parsedRaces.race1 : null,
           race2: isRaceGrid(parsedRaces?.race2) ? parsedRaces.race2 : null
         });
-      } else {
-        setStoredRaces({ race1: null, race2: null });
+      } finally {
+        setIsHydrated(true);
       }
-    } finally {
-      setIsHydrated(true);
-    }
+    })();
   }, [pilotsHydrated, sessionsHydrated, qualyHydrated, activeEventHydrated, activeEventId]);
 
   useEffect(() => {
@@ -129,7 +120,7 @@ export default function RacesPage() {
       return;
     }
 
-    saveEventStorageItem(RACES_STORAGE_KEY, activeEventId, JSON.stringify(storedRaces));
+    void saveModuleState(activeEventId, 'races', storedRaces);
   }, [isHydrated, storedRaces, activeEventId]);
 
   const qualyTimeByPilot = useMemo(() => {

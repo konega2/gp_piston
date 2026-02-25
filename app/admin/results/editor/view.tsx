@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Header } from '@/components/layout/Header';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { useActiveEvent } from '@/context/ActiveEventContext';
-import { loadEventStorageItem, saveEventStorageItem } from '@/lib/eventStorage';
+import { loadModuleState, saveModuleState } from '@/lib/eventStateClient';
 import {
   EMPTY_RACE_RESULT,
   computeRaceResults,
@@ -34,9 +34,6 @@ type EditorRow = {
   };
 };
 
-const RACES_STORAGE_KEY = 'races';
-const RESULTS_STORAGE_KEY = 'results';
-
 export default function ResultsEditorPage() {
   const { activeEventId, isHydrated: activeEventHydrated } = useActiveEvent();
   const [races, setRaces] = useState<StoredRaces>({ race1: null, race2: null });
@@ -53,31 +50,26 @@ export default function ResultsEditorPage() {
 
     setIsHydrated(false);
 
-    try {
-      const rawRaces = loadEventStorageItem(RACES_STORAGE_KEY, activeEventId);
-      if (rawRaces) {
-        const parsedRaces = JSON.parse(rawRaces) as StoredRaces;
+    void (async () => {
+      try {
+        const parsedRaces = await loadModuleState<StoredRaces>(activeEventId, 'races', { race1: null, race2: null });
         setRaces({
           race1: isRaceGrid(parsedRaces?.race1) ? parsedRaces.race1 : null,
           race2: isRaceGrid(parsedRaces?.race2) ? parsedRaces.race2 : null
         });
-      } else {
-        setRaces({ race1: null, race2: null });
-      }
 
-      const rawResults = loadEventStorageItem(RESULTS_STORAGE_KEY, activeEventId);
-      if (rawResults) {
-        const parsedResults = JSON.parse(rawResults) as StoredResults;
+        const parsedResults = await loadModuleState<StoredResults>(activeEventId, 'results', {
+          race1: EMPTY_RACE_RESULT,
+          race2: EMPTY_RACE_RESULT
+        });
         setResults({
           race1: normalizeRaceResult(parsedResults?.race1),
           race2: normalizeRaceResult(parsedResults?.race2)
         });
-      } else {
-        setResults({ race1: EMPTY_RACE_RESULT, race2: EMPTY_RACE_RESULT });
+      } finally {
+        setIsHydrated(true);
       }
-    } finally {
-      setIsHydrated(true);
-    }
+    })();
   }, [activeEventHydrated, activeEventId]);
 
   useEffect(() => {
@@ -85,7 +77,7 @@ export default function ResultsEditorPage() {
       return;
     }
 
-    saveEventStorageItem(RESULTS_STORAGE_KEY, activeEventId, JSON.stringify(results));
+    void saveModuleState(activeEventId, 'results', results);
   }, [isHydrated, results, activeEventHydrated, activeEventId]);
 
   useEffect(() => {

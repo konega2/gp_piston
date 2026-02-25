@@ -3,7 +3,8 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { PilotRecord } from '@/data/pilots';
 import { useActiveEvent } from '@/context/ActiveEventContext';
-import { getEventRuntimeConfig, loadEventStorageItem, saveEventStorageItem } from '@/lib/eventStorage';
+import { getEventRuntimeConfig } from '../lib/eventStorage';
+import { loadModuleState, saveModuleState } from '@/lib/eventStateClient';
 
 type NewPilotInput = Omit<PilotRecord, 'id' | 'numeroPiloto'> & {
   id?: string;
@@ -22,8 +23,6 @@ type PilotsContextValue = {
   deletePilot: (id: string) => void;
 };
 
-const STORAGE_KEY = 'pilots';
-
 const PilotsContext = createContext<PilotsContextValue | null>(null);
 
 export function PilotsProvider({ children }: { children: React.ReactNode }) {
@@ -39,26 +38,22 @@ export function PilotsProvider({ children }: { children: React.ReactNode }) {
 
     setIsHydrated(false);
 
-    try {
-      const raw = loadEventStorageItem(STORAGE_KEY, activeEventId);
-      if (!raw) {
-        setPilots([]);
-        setIsHydrated(true);
-        return;
-      }
+    void (async () => {
+      try {
+        const stored = await loadModuleState<LegacyPilotRecord[]>(activeEventId, 'pilots', []);
+        if (!Array.isArray(stored) || stored.length === 0) {
+          setPilots([]);
+          return;
+        }
 
-      const parsed = JSON.parse(raw) as LegacyPilotRecord[];
-      if (Array.isArray(parsed)) {
-        const storedPilots = parsed.map(normalizePilotRecord);
+        const storedPilots = stored.map(normalizePilotRecord);
         setPilots(sortPilots(storedPilots));
-      } else {
+      } catch {
         setPilots([]);
+      } finally {
+        setIsHydrated(true);
       }
-    } catch {
-      setPilots([]);
-    } finally {
-      setIsHydrated(true);
-    }
+    })();
   }, [activeEventHydrated, activeEventId]);
 
   useEffect(() => {
@@ -66,7 +61,7 @@ export function PilotsProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    saveEventStorageItem(STORAGE_KEY, activeEventId, JSON.stringify(pilots));
+    void saveModuleState(activeEventId, 'pilots', pilots);
   }, [pilots, isHydrated, activeEventHydrated, activeEventId]);
 
   const addPilot = (pilot: NewPilotInput): PilotRecord => {

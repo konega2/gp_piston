@@ -8,7 +8,8 @@ import { useActiveEvent } from '@/context/ActiveEventContext';
 import { useClassification } from '@/context/ClassificationContext';
 import { usePilots } from '@/context/PilotsContext';
 import { useTimeAttackSessions } from '@/context/TimeAttackContext';
-import { getEventRuntimeConfig, loadEventStorageItem, saveEventStorageItem } from '@/lib/eventStorage';
+import { getEventRuntimeConfig } from '@/lib/eventStorage';
+import { loadModuleState, saveModuleState } from '@/lib/eventStateClient';
 import { buildCombinedStandings } from '@/lib/combinedStandings';
 import type { PilotRecord } from '@/data/pilots';
 
@@ -17,8 +18,6 @@ type TeamRecord = {
   name: string;
   members: string[];
 };
-
-const STORAGE_KEY = 'teams';
 
 export default function TeamsPage() {
   const { activeEventId, isHydrated: activeEventHydrated } = useActiveEvent();
@@ -64,16 +63,14 @@ export default function TeamsPage() {
 
     setIsTeamsHydrated(false);
 
-    try {
-      const raw = loadEventStorageItem(STORAGE_KEY, activeEventId);
-      if (!raw) {
-        setTeams(createTeamPlaceholders(configuredTeamsCount));
-        setIsTeamsHydrated(true);
-        return;
-      }
+    void (async () => {
+      try {
+        const parsed = await loadModuleState<TeamRecord[]>(activeEventId, 'teams', []);
+        if (!Array.isArray(parsed) || parsed.length === 0) {
+          setTeams(createTeamPlaceholders(configuredTeamsCount));
+          return;
+        }
 
-      const parsed = JSON.parse(raw) as TeamRecord[];
-      if (Array.isArray(parsed)) {
         const normalized = parsed
           .filter(
             (entry): entry is TeamRecord =>
@@ -86,14 +83,12 @@ export default function TeamsPage() {
           }));
 
         setTeams(normalized.length > 0 ? normalized : createTeamPlaceholders(configuredTeamsCount));
-      } else {
+      } catch {
         setTeams(createTeamPlaceholders(configuredTeamsCount));
+      } finally {
+        setIsTeamsHydrated(true);
       }
-    } catch {
-      setTeams(createTeamPlaceholders(configuredTeamsCount));
-    } finally {
-      setIsTeamsHydrated(true);
-    }
+    })();
   }, [isHydrated, activeEventId, configuredTeamsCount]);
 
   useEffect(() => {
@@ -101,7 +96,7 @@ export default function TeamsPage() {
       return;
     }
 
-    saveEventStorageItem(STORAGE_KEY, activeEventId, JSON.stringify(teams));
+    void saveModuleState(activeEventId, 'teams', teams);
   }, [isTeamsHydrated, teams, activeEventId]);
 
   const handleGenerateTeamsAuto = () => {

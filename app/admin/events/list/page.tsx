@@ -1,32 +1,27 @@
-'use client';
-
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
 import { Header } from '@/components/layout/Header';
-import { deleteEvent, loadEvents, type EventRecord } from '@/lib/eventStorage';
+import { getEvents, type EventRow } from '@/lib/events';
+import { deleteEventAction } from '@/app/admin/events/actions';
 
-export default function EventsListPage() {
-  const [events, setEvents] = useState<EventRecord[]>([]);
-  const [isHydrated, setIsHydrated] = useState(false);
+export const dynamic = 'force-dynamic';
 
-  const refreshEvents = () => {
-    setEvents(loadEvents());
+const toDateLabel = (value: EventRow['date']) => {
+  if (!value) return 'Sin fecha';
+  if (typeof value === 'string') return value;
+  return value.toISOString().slice(0, 10);
+};
+
+export default async function EventsListPage({
+  searchParams
+}: {
+  searchParams?: {
+    success?: string;
+    error?: string;
   };
-
-  useEffect(() => {
-    refreshEvents();
-    setIsHydrated(true);
-  }, []);
-
-  const handleDelete = (event: EventRecord) => {
-    const confirmed = window.confirm(`¿Eliminar el evento ${event.name}? Esta acción borra también sus datos.`);
-    if (!confirmed) {
-      return;
-    }
-
-    deleteEvent(event.id);
-    refreshEvents();
-  };
+}) {
+  const events = await getEvents();
+  const success = searchParams?.success ?? '';
+  const error = searchParams?.error ?? '';
 
   return (
     <main className="min-h-screen bg-gp-bg text-white">
@@ -52,27 +47,31 @@ export default function EventsListPage() {
                   </div>
                 </article>
 
-                {!isHydrated ? (
+                {success ? (
+                  <div className="rounded-lg border border-gp-stateGreen/45 bg-gp-stateGreen/10 px-4 py-3 text-xs uppercase tracking-[0.13em] text-green-200">{success}</div>
+                ) : null}
+
+                {error ? (
+                  <div className="rounded-lg border border-gp-racingRed/45 bg-gp-racingRed/10 px-4 py-3 text-xs uppercase tracking-[0.13em] text-red-200">{error}</div>
+                ) : null}
+
+                {events.length === 0 ? (
                   <div className="rounded-lg border border-white/10 bg-white/[0.02] px-4 py-8 text-center text-xs uppercase tracking-[0.13em] text-gp-textSoft">
-                    Cargando eventos...
-                  </div>
-                ) : events.length === 0 ? (
-                  <div className="rounded-lg border border-white/10 bg-white/[0.02] px-4 py-8 text-center text-xs uppercase tracking-[0.13em] text-gp-textSoft">
-                    No hay eventos creados.
+                    No hay eventos creados
                   </div>
                 ) : (
                   <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                     {events.map((event) => (
                       <article key={event.id} className="rounded-2xl border border-white/10 bg-[rgba(17,24,38,0.72)] p-4 shadow-panel-deep backdrop-blur-xl">
-                        <p className="text-[10px] uppercase tracking-[0.14em] text-gp-textSoft">{event.location}</p>
+                        <p className="text-[10px] uppercase tracking-[0.14em] text-gp-textSoft">{event.location ?? 'Sin ubicación'}</p>
                         <h2 className="mt-1 text-xl font-semibold uppercase tracking-[0.12em] text-white">{event.name}</h2>
-                        <p className="mt-1 text-xs uppercase tracking-[0.11em] text-gp-textSoft">{event.date}</p>
+                        <p className="mt-1 text-xs uppercase tracking-[0.11em] text-gp-textSoft">{toDateLabel(event.date)}</p>
 
                         <div className="mt-3 grid grid-cols-2 gap-2 text-[10px] uppercase tracking-[0.11em] text-gp-textSoft">
-                          <div className="rounded-lg border border-white/10 bg-white/[0.02] px-2 py-1">Pilotos: {event.maxParticipants ?? 0}</div>
-                          <div className="rounded-lg border border-white/10 bg-white/[0.02] px-2 py-1">Equipos: {event.teamsCount ?? 0}</div>
-                          <div className="rounded-lg border border-white/10 bg-white/[0.02] px-2 py-1">TA: {event.timeAttackSessions ?? 0}</div>
-                          <div className="rounded-lg border border-white/10 bg-white/[0.02] px-2 py-1">Carreras: {event.raceCount ?? 0}</div>
+                          <div className="rounded-lg border border-white/10 bg-white/[0.02] px-2 py-1">Pilotos: {event.config?.maxPilots ?? 0}</div>
+                          <div className="rounded-lg border border-white/10 bg-white/[0.02] px-2 py-1">Equipos: {event.config?.teamsCount ?? 0}</div>
+                          <div className="rounded-lg border border-white/10 bg-white/[0.02] px-2 py-1">TA: {event.config?.timeAttackSessions ?? 0}</div>
+                          <div className="rounded-lg border border-white/10 bg-white/[0.02] px-2 py-1">Carreras: {event.config?.raceCount ?? 0}</div>
                         </div>
 
                         <Link
@@ -81,7 +80,6 @@ export default function EventsListPage() {
                         >
                           Entrar
                         </Link>
-
                         <div className="mt-2 grid grid-cols-2 gap-2">
                           <Link
                             href={`/admin/events/edit/${event.id}`}
@@ -90,13 +88,15 @@ export default function EventsListPage() {
                             Editar
                           </Link>
 
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(event)}
-                            className="inline-flex w-full items-center justify-center rounded-lg border border-gp-racingRed/45 bg-gp-racingRed/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.13em] text-red-200 transition-colors duration-200 hover:bg-gp-racingRed/20 hover:text-white"
-                          >
-                            Eliminar
-                          </button>
+                          <form action={deleteEventAction} className="w-full">
+                            <input type="hidden" name="eventId" value={event.id} />
+                            <button
+                              type="submit"
+                              className="inline-flex w-full items-center justify-center rounded-lg border border-gp-racingRed/45 bg-gp-racingRed/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.13em] text-red-200 transition-colors duration-200 hover:bg-gp-racingRed/20 hover:text-white"
+                            >
+                              Eliminar
+                            </button>
+                          </form>
                         </div>
                       </article>
                     ))}

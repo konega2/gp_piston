@@ -6,7 +6,7 @@ import { Header } from '@/components/layout/Header';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { useActiveEvent } from '@/context/ActiveEventContext';
 import { usePilots } from '@/context/PilotsContext';
-import { loadEventStorageItem, saveEventStorageItem } from '@/lib/eventStorage';
+import { loadModuleState, saveModuleState } from '@/lib/eventStateClient';
 
 type RaffleRules = {
   onlyConfirmed: boolean;
@@ -56,9 +56,6 @@ type RaffleFormState = {
   rules: RaffleRules;
 };
 
-const RAFFLES_STORAGE_KEY = 'raffles';
-const RAFFLES_HISTORY_STORAGE_KEY = 'rafflesHistory';
-
 export default function RafflesPage() {
   const { activeEventId, isHydrated: activeEventHydrated } = useActiveEvent();
   const { pilots, isHydrated: pilotsHydrated } = usePilots();
@@ -79,25 +76,17 @@ export default function RafflesPage() {
 
     setIsHydrated(false);
 
-    try {
-      const rawRaffles = loadEventStorageItem(RAFFLES_STORAGE_KEY, activeEventId);
-      if (rawRaffles) {
-        const parsedRaffles = JSON.parse(rawRaffles) as unknown;
+    void (async () => {
+      try {
+        const parsedRaffles = await loadModuleState<unknown>(activeEventId, 'raffles', []);
         setRaffles(normalizeRaffles(parsedRaffles));
-      } else {
-        setRaffles([]);
-      }
 
-      const rawHistory = loadEventStorageItem(RAFFLES_HISTORY_STORAGE_KEY, activeEventId);
-      if (rawHistory) {
-        const parsedHistory = JSON.parse(rawHistory) as unknown;
+        const parsedHistory = await loadModuleState<unknown>(activeEventId, 'rafflesHistory', []);
         setHistory(normalizeHistory(parsedHistory));
-      } else {
-        setHistory([]);
+      } finally {
+        setIsHydrated(true);
       }
-    } finally {
-      setIsHydrated(true);
-    }
+    })();
   }, [activeEventHydrated, activeEventId]);
 
   useEffect(() => {
@@ -105,7 +94,7 @@ export default function RafflesPage() {
       return;
     }
 
-    saveEventStorageItem(RAFFLES_STORAGE_KEY, activeEventId, JSON.stringify(raffles));
+    void saveModuleState(activeEventId, 'raffles', raffles);
   }, [isHydrated, activeEventHydrated, activeEventId, raffles]);
 
   useEffect(() => {
@@ -113,7 +102,7 @@ export default function RafflesPage() {
       return;
     }
 
-    saveEventStorageItem(RAFFLES_HISTORY_STORAGE_KEY, activeEventId, JSON.stringify(history));
+    void saveModuleState(activeEventId, 'rafflesHistory', history);
   }, [isHydrated, activeEventHydrated, activeEventId, history]);
 
   const sortedRaffles = useMemo(

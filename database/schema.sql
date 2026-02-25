@@ -15,6 +15,19 @@ CREATE TABLE IF NOT EXISTS events (
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+-- 1.b) EVENT STATE (persistencia por módulo, reemplazo de localStorage)
+CREATE TABLE IF NOT EXISTS event_state (
+  id TEXT PRIMARY KEY,
+  event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  module_key TEXT NOT NULL,
+  payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  CONSTRAINT uq_event_state_event_module UNIQUE (event_id, module_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_event_state_event_id ON event_state(event_id);
+CREATE INDEX IF NOT EXISTS idx_event_state_module_key ON event_state(module_key);
+
 -- 2) PILOTS
 CREATE TABLE IF NOT EXISTS pilots (
   id TEXT PRIMARY KEY,

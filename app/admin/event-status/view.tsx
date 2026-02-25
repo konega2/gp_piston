@@ -8,7 +8,8 @@ import { useActiveEvent } from '@/context/ActiveEventContext';
 import { useClassification } from '@/context/ClassificationContext';
 import { usePilots } from '@/context/PilotsContext';
 import { useTimeAttackSessions } from '@/context/TimeAttackContext';
-import { getEventRuntimeConfig, loadEventStorageItem } from '@/lib/eventStorage';
+import { getEventRuntimeConfig } from '@/lib/eventStorage';
+import { loadModuleState } from '@/lib/eventStateClient';
 import { EMPTY_RACE_RESULT, normalizeRaceResult, type StoredResults, type TeamRecord } from '@/lib/resultsEngine';
 
 type EventPhaseState = {
@@ -30,9 +31,6 @@ type PhaseConfig = {
   subtitle: string;
   rule: string;
 };
-
-const TEAMS_STORAGE_KEY = 'teams';
-const RESULTS_STORAGE_KEY = 'results';
 
 const EMPTY_RESULTS: StoredResults = {
   race1: EMPTY_RACE_RESULT,
@@ -103,31 +101,23 @@ export default function EventStatusPage() {
 
     setIsStorageHydrated(false);
 
-    try {
-      const rawTeams = loadEventStorageItem(TEAMS_STORAGE_KEY, activeEventId);
-      if (rawTeams) {
-        const parsedTeams = JSON.parse(rawTeams) as unknown;
+    void (async () => {
+      try {
+        const parsedTeams = await loadModuleState<unknown>(activeEventId, 'teams', []);
         setTeams(normalizeTeams(parsedTeams));
-      } else {
-        setTeams([]);
-      }
 
-      const rawResults = loadEventStorageItem(RESULTS_STORAGE_KEY, activeEventId);
-      if (rawResults) {
-        const parsedResults = JSON.parse(rawResults) as Partial<StoredResults>;
+        const parsedResults = await loadModuleState<Partial<StoredResults>>(activeEventId, 'results', EMPTY_RESULTS);
         setResults({
           race1: normalizeRaceResult(parsedResults?.race1),
           race2: normalizeRaceResult(parsedResults?.race2)
         });
-      } else {
+      } catch {
+        setTeams([]);
         setResults(EMPTY_RESULTS);
+      } finally {
+        setIsStorageHydrated(true);
       }
-    } catch {
-      setTeams([]);
-      setResults(EMPTY_RESULTS);
-    } finally {
-      setIsStorageHydrated(true);
-    }
+    })();
   }, [activeEventHydrated, activeEventId]);
 
   const isHydrated = pilotsHydrated && timeAttackHydrated && qualyHydrated && activeEventHydrated && isStorageHydrated;

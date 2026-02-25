@@ -1,100 +1,31 @@
-'use client';
-
 import Link from 'next/link';
-import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { Header } from '@/components/layout/Header';
-import { getEventById, updateEvent, type EventRecord } from '@/lib/eventStorage';
+import { getEventById } from '@/lib/events';
+import { updateEventAction } from '@/app/admin/events/actions';
 
-type FormState = {
-  name: string;
-  date: string;
-  location: string;
-  maxParticipants: string;
-  sessionMaxCapacity: string;
-  teamsCount: string;
-  timeAttackSessions: string;
-  qualyGroups: string;
-  raceCount: string;
+export const dynamic = 'force-dynamic';
+
+const toDateInput = (value: string | Date | null) => {
+  if (!value) return '';
+  if (typeof value === 'string') return value.slice(0, 10);
+  return value.toISOString().slice(0, 10);
 };
 
-export default function EditEventPage({
-  params
+export default async function EditEventPage({
+  params,
+  searchParams
 }: {
   params: {
     eventId: string;
   };
-}) {
-  const router = useRouter();
-  const [eventData, setEventData] = useState<EventRecord | null>(null);
-  const [form, setForm] = useState<FormState | null>(null);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    const found = getEventById(params.eventId);
-    if (!found) {
-      setError('Evento no encontrado.');
-      return;
-    }
-
-    setEventData(found);
-    setForm({
-      name: found.name,
-      date: found.date,
-      location: found.location,
-      maxParticipants: String(found.maxParticipants ?? 20),
-      sessionMaxCapacity: String(found.sessionMaxCapacity ?? 20),
-      teamsCount: String(found.teamsCount ?? 5),
-      timeAttackSessions: String(found.timeAttackSessions ?? 5),
-      qualyGroups: String(found.qualyGroups ?? 3),
-      raceCount: String(found.raceCount ?? 2)
-    });
-  }, [params.eventId]);
-
-  const isValid = useMemo(() => {
-    if (!form) {
-      return false;
-    }
-
-    return (
-      form.name.trim().length > 0 &&
-      form.date.trim().length > 0 &&
-      form.location.trim().length > 0 &&
-      Number(form.maxParticipants) > 0 &&
-      Number(form.sessionMaxCapacity) > 0 &&
-      Number(form.teamsCount) > 0 &&
-      Number(form.timeAttackSessions) > 0 &&
-      Number(form.qualyGroups) > 0 &&
-      Number(form.raceCount) > 0
-    );
-  }, [form]);
-
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-
-    if (!eventData || !form || !isValid) {
-      setError('Completa todos los campos con valores válidos.');
-      return;
-    }
-
-    const updatedEvent: EventRecord = {
-      ...eventData,
-      name: form.name.trim(),
-      date: form.date,
-      location: form.location.trim(),
-      maxParticipants: Number(form.maxParticipants),
-      sessionMaxCapacity: Number(form.sessionMaxCapacity),
-      teamsCount: Number(form.teamsCount),
-      timeAttackSessions: Number(form.timeAttackSessions),
-      qualyGroups: Number(form.qualyGroups),
-      raceCount: Number(form.raceCount)
-    };
-
-    updateEvent(updatedEvent);
-    router.push('/admin/events/list');
+  searchParams?: {
+    error?: string;
   };
+}) {
+  const eventData = await getEventById(params.eventId);
+  const error = searchParams?.error ?? '';
 
-  if (!form) {
+  if (!eventData) {
     return (
       <main className="min-h-screen bg-gp-bg text-white">
         <div className="relative min-h-screen overflow-hidden">
@@ -102,7 +33,7 @@ export default function EditEventPage({
             <Header title="EDITAR EVENTO" subtitle="Actualización de configuración" />
             <section className="px-5 py-6 sm:px-6">
               <div className="mx-auto max-w-5xl rounded-lg border border-white/10 bg-white/[0.02] px-4 py-8 text-center text-xs uppercase tracking-[0.13em] text-gp-textSoft">
-                {error || 'Cargando evento...'}
+                Evento no encontrado.
               </div>
             </section>
           </div>
@@ -121,8 +52,9 @@ export default function EditEventPage({
           <Header title="EDITAR EVENTO" subtitle="Actualización de configuración operativa" />
 
           <section className="px-5 py-6 sm:px-6">
-            <form onSubmit={handleSubmit} className="mx-auto max-w-5xl space-y-5">
+            <form action={updateEventAction} className="mx-auto max-w-5xl space-y-5">
               <article className="rounded-2xl border border-white/10 bg-[rgba(17,24,38,0.72)] p-5 shadow-panel-deep backdrop-blur-xl">
+                <input type="hidden" name="eventId" value={eventData.id} />
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <p className="text-xs uppercase tracking-[0.16em] text-gp-textSoft">EDITAR EVENTO</p>
                   <Link
@@ -135,44 +67,44 @@ export default function EditEventPage({
                 </div>
 
                 <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  <Field label="Nombre" value={form.name} onChange={(value) => setForm((prev) => (prev ? { ...prev, name: value } : prev))} />
-                  <Field label="Fecha" type="date" value={form.date} onChange={(value) => setForm((prev) => (prev ? { ...prev, date: value } : prev))} />
-                  <Field label="Ubicación" value={form.location} onChange={(value) => setForm((prev) => (prev ? { ...prev, location: value } : prev))} />
+                  <Field label="Nombre" name="name" defaultValue={eventData.name} />
+                  <Field label="Fecha" name="date" type="date" defaultValue={toDateInput(eventData.date)} />
+                  <Field label="Ubicación" name="location" defaultValue={eventData.location ?? ''} />
                   <Field
                     label="Máx participantes"
+                    name="maxParticipants"
                     type="number"
-                    value={form.maxParticipants}
-                    onChange={(value) => setForm((prev) => (prev ? { ...prev, maxParticipants: value } : prev))}
+                    defaultValue={String(eventData.config?.maxPilots ?? 20)}
                   />
                   <Field
                     label="Capacidad TA/sesión"
+                    name="sessionMaxCapacity"
                     type="number"
-                    value={form.sessionMaxCapacity}
-                    onChange={(value) => setForm((prev) => (prev ? { ...prev, sessionMaxCapacity: value } : prev))}
+                    defaultValue={String(eventData.config?.sessionMaxCapacity ?? 20)}
                   />
                   <Field
                     label="Cantidad equipos"
+                    name="teamsCount"
                     type="number"
-                    value={form.teamsCount}
-                    onChange={(value) => setForm((prev) => (prev ? { ...prev, teamsCount: value } : prev))}
+                    defaultValue={String(eventData.config?.teamsCount ?? 5)}
                   />
                   <Field
                     label="Sesiones TA"
+                    name="timeAttackSessions"
                     type="number"
-                    value={form.timeAttackSessions}
-                    onChange={(value) => setForm((prev) => (prev ? { ...prev, timeAttackSessions: value } : prev))}
+                    defaultValue={String(eventData.config?.timeAttackSessions ?? 5)}
                   />
                   <Field
                     label="Grupos Qualy"
+                    name="qualyGroups"
                     type="number"
-                    value={form.qualyGroups}
-                    onChange={(value) => setForm((prev) => (prev ? { ...prev, qualyGroups: value } : prev))}
+                    defaultValue={String(eventData.config?.qualyGroups ?? 3)}
                   />
                   <Field
                     label="Cantidad carreras"
+                    name="raceCount"
                     type="number"
-                    value={form.raceCount}
-                    onChange={(value) => setForm((prev) => (prev ? { ...prev, raceCount: value } : prev))}
+                    defaultValue={String(eventData.config?.raceCount ?? 2)}
                   />
                 </div>
 
@@ -182,8 +114,7 @@ export default function EditEventPage({
 
                 <button
                   type="submit"
-                  disabled={!isValid}
-                  className="mt-4 rounded-lg border border-gp-stateGreen/45 bg-gp-stateGreen/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.13em] text-green-200 transition-colors duration-200 hover:bg-gp-stateGreen/20 hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+                  className="mt-4 rounded-lg border border-gp-stateGreen/45 bg-gp-stateGreen/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.13em] text-green-200 transition-colors duration-200 hover:bg-gp-stateGreen/20 hover:text-white"
                 >
                   Guardar cambios
                 </button>
@@ -198,22 +129,24 @@ export default function EditEventPage({
 
 function Field({
   label,
-  value,
-  onChange,
+  name,
+  defaultValue,
   type = 'text'
 }: {
   label: string;
-  value: string;
-  onChange: (value: string) => void;
+  name: string;
+  defaultValue: string;
   type?: 'text' | 'number' | 'date';
 }) {
   return (
     <label className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
       <p className="text-[11px] uppercase tracking-[0.12em] text-gp-textSoft">{label}</p>
       <input
+        name={name}
         type={type}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
+        defaultValue={defaultValue}
+        required
+        min={type === 'number' ? 1 : undefined}
         className="mt-2 w-full bg-transparent text-sm uppercase tracking-[0.08em] text-white outline-none"
       />
     </label>

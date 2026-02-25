@@ -4,7 +4,8 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { PilotRecord } from '@/data/pilots';
 import { useActiveEvent } from '@/context/ActiveEventContext';
 import { usePilots } from '@/context/PilotsContext';
-import { getEventRuntimeConfig, loadEventStorageItem, saveEventStorageItem } from '@/lib/eventStorage';
+import { getEventRuntimeConfig } from '../lib/eventStorage';
+import { loadModuleState, saveModuleState } from '@/lib/eventStateClient';
 
 export type QualySessionName = string;
 export type QualyGroupName = string;
@@ -67,8 +68,6 @@ type ClassificationContextValue = {
   resetQualyAssignments: () => void;
 };
 
-const STORAGE_KEY = 'qualy';
-
 const QUALY_DURATION_MINUTES = 5;
 
 const ClassificationContext = createContext<ClassificationContextValue | null>(null);
@@ -95,34 +94,35 @@ export function ClassificationProvider({ children }: { children: React.ReactNode
 
     setIsHydrated(false);
 
-    try {
-      const raw = loadEventStorageItem(STORAGE_KEY, activeEventId);
-      if (raw) {
-        const parsed = JSON.parse(raw) as unknown;
-        const normalized = normalizeQualySessions(parsed, pilots, eventConfig.qualyGroups, eventConfig.maxParticipants);
-        const withAutoAssignments = shouldAutoAssign(normalized)
-          ? applyAssignmentsByLevel(normalized, pilots, eventConfig.qualyGroups, eventConfig.maxParticipants)
-          : normalized;
+    void (async () => {
+      try {
+        const stored = await loadModuleState<unknown>(activeEventId, 'qualy', null);
+        if (stored) {
+          const parsed = stored as unknown;
+          const normalized = normalizeQualySessions(parsed, pilots, eventConfig.qualyGroups, eventConfig.maxParticipants);
+          const withAutoAssignments = shouldAutoAssign(normalized)
+            ? applyAssignmentsByLevel(normalized, pilots, eventConfig.qualyGroups, eventConfig.maxParticipants)
+            : normalized;
+
+          setQualySessions(withAutoAssignments);
+          return;
+        }
+
+        const defaults = buildDefaultQualySessions(pilots, eventConfig.qualyGroups, eventConfig.maxParticipants);
+        const withAutoAssignments = applyAssignmentsByLevel(defaults, pilots, eventConfig.qualyGroups, eventConfig.maxParticipants);
 
         setQualySessions(withAutoAssignments);
+        await saveModuleState(activeEventId, 'qualy', withAutoAssignments);
+      } catch {
+        const fallback = buildDefaultQualySessions(pilots, eventConfig.qualyGroups, eventConfig.maxParticipants);
+        const withAutoAssignments = applyAssignmentsByLevel(fallback, pilots, eventConfig.qualyGroups, eventConfig.maxParticipants);
+
+        setQualySessions(withAutoAssignments);
+        await saveModuleState(activeEventId, 'qualy', withAutoAssignments);
+      } finally {
         setIsHydrated(true);
-        return;
       }
-
-      const defaults = buildDefaultQualySessions(pilots, eventConfig.qualyGroups, eventConfig.maxParticipants);
-      const withAutoAssignments = applyAssignmentsByLevel(defaults, pilots, eventConfig.qualyGroups, eventConfig.maxParticipants);
-
-      setQualySessions(withAutoAssignments);
-      saveEventStorageItem(STORAGE_KEY, activeEventId, JSON.stringify(withAutoAssignments));
-    } catch {
-      const fallback = buildDefaultQualySessions(pilots, eventConfig.qualyGroups, eventConfig.maxParticipants);
-      const withAutoAssignments = applyAssignmentsByLevel(fallback, pilots, eventConfig.qualyGroups, eventConfig.maxParticipants);
-
-      setQualySessions(withAutoAssignments);
-      saveEventStorageItem(STORAGE_KEY, activeEventId, JSON.stringify(withAutoAssignments));
-    } finally {
-      setIsHydrated(true);
-    }
+    })();
   }, [pilots, pilotsHydrated, activeEventHydrated, activeEventId, eventConfig.qualyGroups, eventConfig.maxParticipants]);
 
   useEffect(() => {
@@ -130,7 +130,7 @@ export function ClassificationProvider({ children }: { children: React.ReactNode
       return;
     }
 
-    saveEventStorageItem(STORAGE_KEY, activeEventId, JSON.stringify(qualySessions));
+    void saveModuleState(activeEventId, 'qualy', qualySessions);
   }, [isHydrated, qualySessions, activeEventHydrated, activeEventId]);
 
   const saveQualyTimes = (entries: SaveQualyInput[]) => {
