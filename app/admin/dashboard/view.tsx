@@ -70,10 +70,12 @@ export default function AdminDashboardPage() {
 
     void (async () => {
       try {
-        const teamsPayload = await loadModuleState<unknown>(activeEventId, 'teams', []);
-        setTeams(normalizeTeams(teamsPayload));
+        const [teamsPayload, parsedResults] = await Promise.all([
+          loadModuleState<unknown>(activeEventId, 'teams', []),
+          loadModuleState<Partial<StoredResults>>(activeEventId, 'results', EMPTY_RESULTS)
+        ]);
 
-        const parsedResults = await loadModuleState<Partial<StoredResults>>(activeEventId, 'results', EMPTY_RESULTS);
+        setTeams(normalizeTeams(teamsPayload));
         setResults({
           race1: normalizeRaceResult(parsedResults?.race1),
           race2: normalizeRaceResult(parsedResults?.race2)

@@ -21,6 +21,31 @@ type EventInfo = {
 };
 
 const cache = new Map<string, EventInfo>();
+const inFlight = new Map<string, Promise<EventInfo>>();
+
+async function fetchEventInfo(eventId: string): Promise<EventInfo> {
+  const cached = cache.get(eventId);
+  if (cached) {
+    return cached;
+  }
+
+  const pending = inFlight.get(eventId);
+  if (pending) {
+    return pending;
+  }
+
+  const request = getEventInfoAction(eventId)
+    .then((info) => {
+      cache.set(eventId, info);
+      return info;
+    })
+    .finally(() => {
+      inFlight.delete(eventId);
+    });
+
+  inFlight.set(eventId, request);
+  return request;
+}
 
 export function useEventInfo(eventId: string) {
   const [eventInfo, setEventInfo] = useState<EventInfo | null>(() => cache.get(eventId) ?? null);
@@ -35,10 +60,9 @@ export function useEventInfo(eventId: string) {
         return;
       }
 
-      const info = await getEventInfoAction(eventId);
+      const info = await fetchEventInfo(eventId);
       if (cancelled) return;
 
-      cache.set(eventId, info);
       setEventInfo(info);
     })();
 
