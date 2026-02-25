@@ -282,7 +282,7 @@ export function PilotProfile({ pilot }: PilotProfileProps) {
             inputValue={draftData.telefono}
             minLength={9}
             maxLength={9}
-            pattern="\\d{9}"
+            pattern="[0-9]{9}"
             inputMode="numeric"
             onInputChange={(value) => setDraftData((prev) => ({ ...prev, telefono: value.replace(/\D/g, '').slice(0, 9) }))}
           />

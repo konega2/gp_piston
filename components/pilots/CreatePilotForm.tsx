@@ -210,7 +210,7 @@ export function CreatePilotForm() {
             value={personalInfo.phone}
             onChange={(value) => updatePersonalInfo('phone', value)}
             placeholder="600000000"
-            pattern="\\d{9}"
+            pattern="[0-9]{9}"
             minLength={9}
             maxLength={9}
             inputMode="numeric"
