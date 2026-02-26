@@ -37,6 +37,7 @@ type TimeAttackContextValue = {
   bestReferenceTime: number | null;
   closeSession: (sessionId: string) => void;
   updateSessionStartTime: (sessionId: string, startTime: string) => { ok: boolean; reason?: 'not-found' | 'invalid-time' };
+  updateSessionDuration: (sessionId: string, duration: number) => { ok: boolean; reason?: 'not-found' | 'invalid-duration' };
   togglePilotAssignment: (sessionId: string, pilotId: string) => { ok: boolean; reason?: 'closed' | 'full' | 'not-found' };
   saveSessionTimes: (input: SaveSessionTimesInput) => { ok: boolean; reason?: 'closed' | 'not-found' };
 };
@@ -147,6 +148,40 @@ export function TimeAttackProvider({ children }: { children: React.ReactNode }) 
     return { ok: true };
   };
 
+  const updateSessionDuration = (
+    sessionId: string,
+    duration: number
+  ): { ok: boolean; reason?: 'not-found' | 'invalid-duration' } => {
+    if (!Number.isFinite(duration) || duration <= 0) {
+      return { ok: false, reason: 'invalid-duration' };
+    }
+
+    const safeDuration = Math.floor(duration);
+    if (safeDuration <= 0) {
+      return { ok: false, reason: 'invalid-duration' };
+    }
+
+    const target = sessions.find((session) => session.id === sessionId);
+    if (!target) {
+      return { ok: false, reason: 'not-found' };
+    }
+
+    setSessions((prev) =>
+      sortSessions(
+        prev.map((session) =>
+          session.id === sessionId
+            ? {
+                ...session,
+                duration: safeDuration
+              }
+            : session
+        )
+      )
+    );
+
+    return { ok: true };
+  };
+
   const togglePilotAssignment = (
     sessionId: string,
     pilotId: string
@@ -246,7 +281,16 @@ export function TimeAttackProvider({ children }: { children: React.ReactNode }) 
   }, [sessions]);
 
   const value = useMemo<TimeAttackContextValue>(
-    () => ({ sessions, isHydrated, bestReferenceTime, closeSession, updateSessionStartTime, togglePilotAssignment, saveSessionTimes }),
+    () => ({
+      sessions,
+      isHydrated,
+      bestReferenceTime,
+      closeSession,
+      updateSessionStartTime,
+      updateSessionDuration,
+      togglePilotAssignment,
+      saveSessionTimes
+    }),
     [sessions, isHydrated, bestReferenceTime]
   );
 

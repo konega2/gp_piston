@@ -11,7 +11,7 @@ import { useEventName } from '@/lib/event-client';
 export default function TimeAttackSessionsPage() {
   const { activeEventId, isHydrated: activeEventHydrated } = useActiveEvent();
   const eventNameFromDb = useEventName(activeEventId);
-  const { sessions, closeSession, updateSessionStartTime, isHydrated } = useTimeAttackSessions();
+  const { sessions, closeSession, updateSessionStartTime, updateSessionDuration, isHydrated } = useTimeAttackSessions();
   const eventName = activeEventHydrated ? eventNameFromDb ?? 'Evento' : 'Evento';
   const firstSession = sessions[0]?.name ?? 'T1';
   const lastSession = sessions[sessions.length - 1]?.name ?? 'T1';
@@ -56,7 +56,13 @@ export default function TimeAttackSessionsPage() {
                 ) : (
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
                     {sessions.map((session) => (
-                      <SessionCard key={session.id} session={session} onClose={closeSession} onUpdateStartTime={updateSessionStartTime} />
+                      <SessionCard
+                        key={session.id}
+                        session={session}
+                        onClose={closeSession}
+                        onUpdateStartTime={updateSessionStartTime}
+                        onUpdateDuration={updateSessionDuration}
+                      />
                     ))}
                   </div>
                 )}
