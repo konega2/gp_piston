@@ -11,7 +11,16 @@ import { useEventName } from '@/lib/event-client';
 export default function TimeAttackSessionsPage() {
   const { activeEventId, isHydrated: activeEventHydrated } = useActiveEvent();
   const eventNameFromDb = useEventName(activeEventId);
-  const { sessions, closeSession, updateSessionStartTime, updateSessionDuration, isHydrated } = useTimeAttackSessions();
+  const {
+    sessions,
+    addSession,
+    deleteSession,
+    closeSession,
+    updateSessionStartTime,
+    updateSessionDuration,
+    updateSessionCapacity,
+    isHydrated
+  } = useTimeAttackSessions();
   const eventName = activeEventHydrated ? eventNameFromDb ?? 'Evento' : 'Evento';
   const firstSession = sessions[0]?.name ?? 'T1';
   const lastSession = sessions[sessions.length - 1]?.name ?? 'T1';
@@ -39,13 +48,23 @@ export default function TimeAttackSessionsPage() {
 
                   <div className="mt-4 flex items-center justify-between">
                     <span className="text-xs uppercase tracking-[0.13em] text-gp-textSoft">Capacidad máxima por sesión: {maxCapacity} pilotos</span>
-                    <Link
-                      href={`/admin/events/${activeEventId}/time-attack`}
-                      className="inline-flex items-center gap-2 rounded-lg border border-gp-telemetryBlue/45 bg-gp-telemetryBlue/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-cyan-200 transition-colors duration-200 hover:bg-gp-telemetryBlue/20"
-                    >
-                      <span aria-hidden>←</span>
-                      Volver a Time Attack
-                    </Link>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => addSession()}
+                        className="inline-flex items-center gap-2 rounded-lg border border-gp-racingRed/45 bg-gp-racingRed/[0.08] px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-red-200 transition-colors duration-200 hover:bg-gp-racingRed/[0.2] hover:text-white"
+                      >
+                        + Añadir sesión TA
+                      </button>
+
+                      <Link
+                        href={`/admin/events/${activeEventId}/time-attack`}
+                        className="inline-flex items-center gap-2 rounded-lg border border-gp-telemetryBlue/45 bg-gp-telemetryBlue/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-cyan-200 transition-colors duration-200 hover:bg-gp-telemetryBlue/20"
+                      >
+                        <span aria-hidden>←</span>
+                        Volver a Time Attack
+                      </Link>
+                    </div>
                   </div>
                 </article>
 
@@ -60,8 +79,10 @@ export default function TimeAttackSessionsPage() {
                         key={session.id}
                         session={session}
                         onClose={closeSession}
+                        onDelete={deleteSession}
                         onUpdateStartTime={updateSessionStartTime}
                         onUpdateDuration={updateSessionDuration}
+                        onUpdateCapacity={updateSessionCapacity}
                       />
                     ))}
                   </div>

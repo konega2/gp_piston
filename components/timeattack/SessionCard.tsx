@@ -5,11 +5,20 @@ import { usePilots } from '@/context/PilotsContext';
 type SessionCardProps = {
   session: TimeAttackSession;
   onClose: (sessionId: string) => void;
+  onDelete: (sessionId: string) => { ok: boolean; reason?: 'not-found' | 'last-session' };
   onUpdateStartTime: (sessionId: string, startTime: string) => { ok: boolean; reason?: 'not-found' | 'invalid-time' };
   onUpdateDuration: (sessionId: string, duration: number) => { ok: boolean; reason?: 'not-found' | 'invalid-duration' };
+  onUpdateCapacity: (sessionId: string, maxCapacity: number) => { ok: boolean; reason?: 'not-found' | 'invalid-capacity' };
 };
 
-export function SessionCard({ session, onClose, onUpdateStartTime, onUpdateDuration }: SessionCardProps) {
+export function SessionCard({
+  session,
+  onClose,
+  onDelete,
+  onUpdateStartTime,
+  onUpdateDuration,
+  onUpdateCapacity
+}: SessionCardProps) {
   const { pilots } = usePilots();
   const assignedCount = session.assignedPilots.length;
   const occupancyPercent = Math.min((assignedCount / session.maxCapacity) * 100, 100);
@@ -17,6 +26,7 @@ export function SessionCard({ session, onClose, onUpdateStartTime, onUpdateDurat
   const timeRange = getSessionTimeRange(session.startTime, session.duration);
   const [editableStartTime, setEditableStartTime] = useState(session.startTime);
   const [editableDuration, setEditableDuration] = useState(String(session.duration));
+  const [editableCapacity, setEditableCapacity] = useState(String(session.maxCapacity));
   const [feedback, setFeedback] = useState<string | null>(null);
   const [showAssignedPilots, setShowAssignedPilots] = useState(false);
 
@@ -43,6 +53,10 @@ export function SessionCard({ session, onClose, onUpdateStartTime, onUpdateDurat
     setEditableDuration(String(session.duration));
   }, [session.duration]);
 
+  useEffect(() => {
+    setEditableCapacity(String(session.maxCapacity));
+  }, [session.maxCapacity]);
+
   const handleSaveTime = () => {
     const result = onUpdateStartTime(session.id, editableStartTime);
     if (!result.ok) {
@@ -62,6 +76,27 @@ export function SessionCard({ session, onClose, onUpdateStartTime, onUpdateDurat
     }
 
     setFeedback('Duración guardada');
+  };
+
+  const handleSaveCapacity = () => {
+    const parsedCapacity = Number(editableCapacity);
+    const result = onUpdateCapacity(session.id, parsedCapacity);
+    if (!result.ok) {
+      setFeedback('Capacidad inválida. Debe ser un número mayor a 0.');
+      return;
+    }
+
+    setFeedback('Capacidad guardada');
+  };
+
+  const handleDeleteSession = () => {
+    const result = onDelete(session.id);
+    if (!result.ok) {
+      setFeedback('No se puede borrar la última sesión.');
+      return;
+    }
+
+    setFeedback('Sesión eliminada');
   };
 
   return (
@@ -144,6 +179,29 @@ export function SessionCard({ session, onClose, onUpdateStartTime, onUpdateDurat
         </div>
 
         <div className="space-y-2">
+          <label className="text-xs uppercase tracking-[0.13em] text-gp-textSoft">Capacidad máxima</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={1}
+              value={editableCapacity}
+              onChange={(event) => {
+                setEditableCapacity(event.target.value);
+                setFeedback(null);
+              }}
+              className="w-full rounded-lg border border-white/20 bg-[rgba(17,24,38,0.75)] px-3 py-2 text-sm text-white outline-none transition-colors focus:border-gp-telemetryBlue/55"
+            />
+            <button
+              type="button"
+              onClick={handleSaveCapacity}
+              className="rounded-lg border border-gp-telemetryBlue/45 bg-gp-telemetryBlue/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.13em] text-cyan-200 transition-all duration-200 hover:bg-gp-telemetryBlue/20 hover:text-white"
+            >
+              Guardar
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-2">
           <button
             type="button"
             onClick={() => setShowAssignedPilots((current) => !current)}
@@ -188,6 +246,14 @@ export function SessionCard({ session, onClose, onUpdateStartTime, onUpdateDurat
             Cerrar sesión
           </button>
         </div>
+
+        <button
+          type="button"
+          onClick={handleDeleteSession}
+          className="w-full rounded-lg border border-gp-racingRed/45 bg-gp-racingRed/[0.08] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.13em] text-red-200 transition-all duration-200 hover:bg-gp-racingRed/[0.18] hover:text-white"
+        >
+          Borrar sesión
+        </button>
       </div>
     </article>
   );

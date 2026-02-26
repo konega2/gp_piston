@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import {
   createDefaultTimeAttackSessions,
+  DEFAULT_SESSION_DURATION,
   TimeAttackPilotTime,
   TimeAttackSession
 } from '@/data/timeAttackSessions';
@@ -35,9 +36,12 @@ type TimeAttackContextValue = {
   sessions: TimeAttackSession[];
   isHydrated: boolean;
   bestReferenceTime: number | null;
+  addSession: () => { ok: boolean; id: string };
+  deleteSession: (sessionId: string) => { ok: boolean; reason?: 'not-found' | 'last-session' };
   closeSession: (sessionId: string) => void;
   updateSessionStartTime: (sessionId: string, startTime: string) => { ok: boolean; reason?: 'not-found' | 'invalid-time' };
   updateSessionDuration: (sessionId: string, duration: number) => { ok: boolean; reason?: 'not-found' | 'invalid-duration' };
+  updateSessionCapacity: (sessionId: string, maxCapacity: number) => { ok: boolean; reason?: 'not-found' | 'invalid-capacity' };
   togglePilotAssignment: (sessionId: string, pilotId: string) => { ok: boolean; reason?: 'closed' | 'full' | 'not-found' };
   saveSessionTimes: (input: SaveSessionTimesInput) => { ok: boolean; reason?: 'closed' | 'not-found' };
 };
@@ -101,6 +105,48 @@ export function TimeAttackProvider({ children }: { children: React.ReactNode }) 
 
     void saveModuleState(activeEventId, 'timeAttack', sessions);
   }, [sessions, isHydrated, activeEventHydrated, activeEventId]);
+
+  const addSession = (): { ok: boolean; id: string } => {
+    const nextNumber = getNextSessionNumber(sessions);
+    const nextName = `T${nextNumber}`;
+    const nextStartTime = getNextSessionStartTime(sessions);
+    const maxCapacity = sessions[0]?.maxCapacity ?? eventConfig?.sessionMaxCapacity ?? 20;
+    const duration = sessions[0]?.duration ?? DEFAULT_SESSION_DURATION;
+    const id = crypto.randomUUID();
+
+    setSessions((prev) =>
+      sortSessions([
+        ...prev,
+        {
+          id,
+          name: nextName,
+          startTime: nextStartTime,
+          duration,
+          maxCapacity,
+          assignedPilots: [],
+          status: 'pending',
+          referenceTime: null,
+          times: []
+        }
+      ])
+    );
+
+    return { ok: true, id };
+  };
+
+  const deleteSession = (sessionId: string): { ok: boolean; reason?: 'not-found' | 'last-session' } => {
+    const target = sessions.find((session) => session.id === sessionId);
+    if (!target) {
+      return { ok: false, reason: 'not-found' };
+    }
+
+    if (sessions.length <= 1) {
+      return { ok: false, reason: 'last-session' };
+    }
+
+    setSessions((prev) => prev.filter((session) => session.id !== sessionId));
+    return { ok: true };
+  };
 
   const closeSession = (sessionId: string) => {
     setSessions((prev) =>
@@ -176,6 +222,47 @@ export function TimeAttackProvider({ children }: { children: React.ReactNode }) 
               }
             : session
         )
+      )
+    );
+
+    return { ok: true };
+  };
+
+  const updateSessionCapacity = (
+    sessionId: string,
+    maxCapacity: number
+  ): { ok: boolean; reason?: 'not-found' | 'invalid-capacity' } => {
+    if (!Number.isFinite(maxCapacity) || maxCapacity <= 0) {
+      return { ok: false, reason: 'invalid-capacity' };
+    }
+
+    const safeCapacity = Math.floor(maxCapacity);
+    if (safeCapacity <= 0) {
+      return { ok: false, reason: 'invalid-capacity' };
+    }
+
+    const target = sessions.find((session) => session.id === sessionId);
+    if (!target) {
+      return { ok: false, reason: 'not-found' };
+    }
+
+    setSessions((prev) =>
+      sortSessions(
+        prev.map((session) => {
+          if (session.id !== sessionId) {
+            return session;
+          }
+
+          const nextAssigned = session.assignedPilots.slice(0, safeCapacity);
+          const nextTimes = session.times.filter((time) => nextAssigned.includes(time.pilotId));
+
+          return {
+            ...session,
+            maxCapacity: safeCapacity,
+            assignedPilots: nextAssigned,
+            times: nextTimes
+          };
+        })
       )
     );
 
@@ -285,9 +372,12 @@ export function TimeAttackProvider({ children }: { children: React.ReactNode }) 
       sessions,
       isHydrated,
       bestReferenceTime,
+      addSession,
+      deleteSession,
       closeSession,
       updateSessionStartTime,
       updateSessionDuration,
+      updateSessionCapacity,
       togglePilotAssignment,
       saveSessionTimes
     }),
@@ -314,65 +404,63 @@ function normalizeSessions(
 ): TimeAttackSession[] {
   const defaults = createDefaultTimeAttackSessions(maxCapacity, sessionsCount);
   const eligiblePilotIds = getEligibleTimeAttackPilotIds(pilots);
-  if (!Array.isArray(value)) {
+  if (!Array.isArray(value) || value.length === 0) {
     return defaults;
   }
 
-  const byName = new Map<string, LegacyTimeAttackSession>();
-  value.forEach((session) => {
-    if (session && typeof session === 'object' && typeof (session as LegacyTimeAttackSession).name === 'string') {
-      byName.set((session as LegacyTimeAttackSession).name, session as LegacyTimeAttackSession);
-    }
-  });
+  const normalizedStored: TimeAttackSession[] = value
+    .filter(
+      (session): session is LegacyTimeAttackSession =>
+        Boolean(session) && typeof session === 'object' && typeof (session as LegacyTimeAttackSession).name === 'string'
+    )
+    .map((stored, index): TimeAttackSession => {
+      const defaultSession = defaults[index] ?? defaults[defaults.length - 1] ?? createDefaultTimeAttackSessions(maxCapacity, 1)[0];
 
-  return defaults.map((defaultSession) => {
-    const stored = byName.get(defaultSession.name);
-    if (!stored) {
-      return defaultSession;
-    }
+      const normalizedTimes = Array.isArray(stored.times)
+        ? stored.times
+            .filter(
+              (time): time is Required<Pick<TimeAttackPilotTime, 'pilotId' | 'rawTime'>> =>
+                Boolean(time) &&
+                typeof time?.pilotId === 'string' &&
+                typeof time?.rawTime === 'number' &&
+                time.rawTime > 0
+            )
+            .map((time) => ({
+              pilotId: time.pilotId,
+              rawTime: time.rawTime,
+              correctedTime: time.rawTime
+            }))
+        : [];
 
-    const normalizedTimes = Array.isArray(stored.times)
-      ? stored.times
-          .filter(
-            (time): time is Required<Pick<TimeAttackPilotTime, 'pilotId' | 'rawTime'>> =>
-              Boolean(time) &&
-              typeof time?.pilotId === 'string' &&
-              typeof time?.rawTime === 'number' &&
-              time.rawTime > 0
-          )
-          .map((time) => ({
-            pilotId: time.pilotId,
-            rawTime: time.rawTime,
-            correctedTime: time.rawTime
-          }))
-      : [];
-
-    return {
-      ...defaultSession,
-      id: typeof stored.id === 'string' ? stored.id : defaultSession.id,
-      startTime: isValidTimeString(stored.startTime) ? stored.startTime : defaultSession.startTime,
-      duration:
-        typeof stored.duration === 'number' && Number.isFinite(stored.duration) && stored.duration > 0
-          ? Math.floor(stored.duration)
-          : defaultSession.duration,
-      maxCapacity:
-        typeof stored.maxCapacity === 'number' && Number.isFinite(stored.maxCapacity) && stored.maxCapacity > 0
-          ? Math.floor(stored.maxCapacity)
-          : maxCapacity,
-      assignedPilots: Array.isArray(stored.assignedPilots)
-        ? Array.from(
-            new Set(
-              stored.assignedPilots.filter(
-                (pilotId): pilotId is string => typeof pilotId === 'string' && eligiblePilotIds.has(pilotId)
+      return {
+        ...defaultSession,
+        id: typeof stored.id === 'string' ? stored.id : defaultSession.id,
+        name: typeof stored.name === 'string' && stored.name.trim().length > 0 ? stored.name : defaultSession.name,
+        startTime: isValidTimeString(stored.startTime) ? stored.startTime : defaultSession.startTime,
+        duration:
+          typeof stored.duration === 'number' && Number.isFinite(stored.duration) && stored.duration > 0
+            ? Math.floor(stored.duration)
+            : defaultSession.duration,
+        maxCapacity:
+          typeof stored.maxCapacity === 'number' && Number.isFinite(stored.maxCapacity) && stored.maxCapacity > 0
+            ? Math.floor(stored.maxCapacity)
+            : maxCapacity,
+        assignedPilots: Array.isArray(stored.assignedPilots)
+          ? Array.from(
+              new Set(
+                stored.assignedPilots.filter(
+                  (pilotId): pilotId is string => typeof pilotId === 'string' && eligiblePilotIds.has(pilotId)
+                )
               )
             )
-          )
-        : defaultSession.assignedPilots,
-      status: stored.status === 'closed' ? 'closed' : 'pending',
-      referenceTime: null,
-      times: normalizedTimes.filter((time) => eligiblePilotIds.has(time.pilotId))
-    };
-  });
+          : defaultSession.assignedPilots,
+        status: stored.status === 'closed' ? 'closed' : 'pending',
+        referenceTime: null,
+        times: normalizedTimes.filter((time) => eligiblePilotIds.has(time.pilotId))
+      };
+    });
+
+  return normalizedStored.length > 0 ? normalizedStored : defaults;
 }
 
 function recalculateCorrectedTimes(list: TimeAttackSession[]): TimeAttackSession[] {
@@ -420,4 +508,34 @@ function isValidTimeString(value: unknown): value is string {
   }
 
   return /^([01]\d|2[0-3]):([0-5]\d)$/.test(value);
+}
+
+function getNextSessionNumber(list: TimeAttackSession[]) {
+  const maxNumber = list.reduce((max, session) => Math.max(max, sessionNumber(session.name)), 0);
+  if (!Number.isFinite(maxNumber) || maxNumber <= 0 || maxNumber === Number.MAX_SAFE_INTEGER) {
+    return list.length + 1;
+  }
+
+  return maxNumber + 1;
+}
+
+function getNextSessionStartTime(list: TimeAttackSession[]) {
+  if (list.length === 0) {
+    return '09:30';
+  }
+
+  const sorted = sortSessions(list);
+  const last = sorted[sorted.length - 1];
+  const [hourPart, minutePart] = last.startTime.split(':');
+  const hour = Number(hourPart);
+  const minute = Number(minutePart);
+
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) {
+    return '09:30';
+  }
+
+  const total = hour * 60 + minute + 15;
+  const nextHour = Math.floor(total / 60) % 24;
+  const nextMinute = total % 60;
+  return `${String(nextHour).padStart(2, '0')}:${String(nextMinute).padStart(2, '0')}`;
 }
