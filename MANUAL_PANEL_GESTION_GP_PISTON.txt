@@ -1,0 +1,179 @@
+MANUAL DEL PANEL DE GESTIÓN GP PISTÓN
+Versión: 1.1
+Fecha: 25/02/2026
+
+====================================================
+ABREVIACIONES (GLOSARIO RÁPIDO)
+====================================================
+TA = Time Attack
+Qualy = Clasificación
+Dashboard = Resumen general del evento
+Standings = Clasificación acumulada
+
+====================================================
+1) ¿PARA QUÉ SIRVE ESTE PANEL?
+====================================================
+Este panel ayuda a gestionar un evento completo de forma ordenada,
+desde la inscripción de pilotos hasta los resultados finales.
+
+En la práctica, permite:
+- Tener toda la información del evento en un solo lugar.
+- Ahorrar tiempo en organización y seguimiento.
+- Evitar errores al validar datos clave automáticamente.
+- Ver el avance real del evento en cada fase.
+
+====================================================
+2) ACCESO
+====================================================
+Credenciales de acceso:
+- Usuario: admin
+- Contraseña: gp2026
+
+Beneficio para el cliente:
+- Entrada rápida y controlada al panel.
+- Opción "Recordar usuario" para facilitar próximos accesos.
+
+====================================================
+3) EVENTOS
+====================================================
+Qué puede hacer:
+- Crear eventos nuevos.
+- Editar configuración del evento.
+- Eliminar eventos que ya no se usarán.
+
+En qué le beneficia:
+- Define reglas del campeonato desde el inicio (pilotos, equipos, TA, carreras).
+- Evita reconfigurar módulo por módulo.
+
+Cómo lo hace más práctico:
+- Un evento bien configurado actualiza automáticamente el resto de apartados.
+
+====================================================
+4) PILOTOS
+====================================================
+Qué puede hacer:
+- Registrar pilotos.
+- Editar información del piloto.
+- Eliminar pilotos.
+
+En qué le beneficia:
+- Mantiene un padrón limpio y confiable.
+- Reduce errores en datos personales antes de competir.
+
+Cómo lo hace más práctico:
+- Validaciones automáticas de calidad de datos:
+  - Edad: 18 a 80
+  - Teléfono: 9 dígitos numéricos
+  - Peso (si se completa): 40 a 150 kg
+
+====================================================
+5) TA (TIME ATTACK)
+====================================================
+Qué puede hacer:
+- Gestionar sesiones de TA.
+- Asignar pilotos a sesiones.
+- Registrar tiempos.
+
+En qué le beneficia:
+- Ordena la fase inicial de rendimiento.
+- Facilita ver referencias y ritmo de cada piloto.
+
+Cómo lo hace más práctico:
+- Cálculo y guardado automático de datos de sesión.
+
+====================================================
+6) QUALY (CLASIFICACIÓN)
+====================================================
+Qué puede hacer:
+- Gestionar grupos de clasificación.
+- Asignar pilotos por distintos criterios.
+- Registrar tiempos de qualy.
+
+En qué le beneficia:
+- Mejora la organización de la parrilla y el orden competitivo.
+- Permite una clasificación más transparente.
+
+Cómo lo hace más práctico:
+- El sistema conserva asignaciones y tiempos para continuar sin rehacer trabajo.
+
+====================================================
+7) EQUIPOS
+====================================================
+Qué puede hacer:
+- Generar equipos del evento.
+- Revisar composición de cada equipo.
+
+En qué le beneficia:
+- Acelera la preparación de la parte colectiva de la competencia.
+- Mantiene coherencia con la configuración del evento.
+
+Cómo lo hace más práctico:
+- Evita armar equipos manualmente desde cero cada vez.
+
+====================================================
+8) CARRERAS
+====================================================
+Qué puede hacer:
+- Gestionar parrillas de salida para Carrera 1 y Carrera 2.
+
+En qué le beneficia:
+- Da estructura clara a la jornada de carrera.
+- Evita confusión en posiciones y categorías.
+
+Cómo lo hace más práctico:
+- Centraliza el armado de carrera para usarlo directo en resultados.
+
+====================================================
+9) RESULTADOS
+====================================================
+Qué puede hacer:
+- Cargar posiciones finales por carrera.
+- Calcular puntuación automáticamente.
+- Visualizar resultados oficiales y clasificación acumulada.
+
+En qué le beneficia:
+- Reduce tiempos de cierre de carrera.
+- Permite comunicar resultados más rápido y con menos errores.
+
+Cómo lo hace más práctico:
+- El sistema suma puntos y bonus de forma automática y consistente.
+
+====================================================
+10) DASHBOARD (ESTADO DEL EVENTO)
+====================================================
+Qué puede hacer:
+- Ver en una pantalla el estado general del evento.
+- Consultar métricas clave y fases completadas.
+
+En qué le beneficia:
+- Facilita toma de decisiones durante la operación.
+- Permite detectar qué parte del evento falta cerrar.
+
+Cómo lo hace más práctico:
+- Evita revisar módulo por módulo para saber el estado real.
+
+====================================================
+11) SORTEOS
+====================================================
+Qué puede hacer:
+- Gestionar sorteos del evento.
+- Registrar historial de ganadores.
+
+En qué le beneficia:
+- Transparencia y trazabilidad de sorteos.
+- Orden en premios/promociones durante el evento.
+
+Cómo lo hace más práctico:
+- Mantiene registro automático para consultas posteriores.
+
+====================================================
+12) RESUMEN 
+====================================================
+Con este panel, consigues:
+- Menos trabajo manual.
+- Más control operativo.
+- Menos errores de carga.
+- Mejor visibilidad del evento en tiempo real.
+- Proceso completo, desde inscripción hasta resultados finales.
+
+Fin del manual.
