@@ -11,7 +11,7 @@ import { useEventName } from '@/lib/event-client';
 export default function TimeAttackSessionsPage() {
   const { activeEventId, isHydrated: activeEventHydrated } = useActiveEvent();
   const eventNameFromDb = useEventName(activeEventId);
-  const { sessions, closeSession, isHydrated } = useTimeAttackSessions();
+  const { sessions, closeSession, updateSessionStartTime, isHydrated } = useTimeAttackSessions();
   const eventName = activeEventHydrated ? eventNameFromDb ?? 'Evento' : 'Evento';
   const firstSession = sessions[0]?.name ?? 'T1';
   const lastSession = sessions[sessions.length - 1]?.name ?? 'T1';
@@ -32,9 +32,9 @@ export default function TimeAttackSessionsPage() {
             <section className="px-5 py-6 sm:px-6">
               <div className="mx-auto max-w-7xl space-y-5">
                 <article className="rounded-2xl border border-white/10 bg-[rgba(17,24,38,0.72)] p-5 shadow-panel-deep backdrop-blur-xl">
-                  <p className="text-xs uppercase tracking-[0.16em] text-gp-textSoft">{eventName.toUpperCase()} · CONFIGURACIÓN CERRADA</p>
+                  <p className="text-xs uppercase tracking-[0.16em] text-gp-textSoft">{eventName.toUpperCase()} · CONFIGURACIÓN DE HORARIO</p>
                   <h1 className="mt-2 text-3xl font-semibold uppercase tracking-[0.14em] text-white">Sesiones Oficiales {firstSession} — {lastSession}</h1>
-                  <p className="mt-2 text-sm text-gp-textSoft">Las sesiones se inicializan automáticamente y no admiten creación o borrado manual.</p>
+                  <p className="mt-2 text-sm text-gp-textSoft">Puedes ajustar la hora de inicio por sesión. La configuración se guarda automáticamente para el evento activo.</p>
                   <div className="mt-4 h-px w-full bg-gradient-to-r from-gp-racingRed/80 via-gp-telemetryBlue/55 to-transparent" />
 
                   <div className="mt-4 flex items-center justify-between">
@@ -56,7 +56,7 @@ export default function TimeAttackSessionsPage() {
                 ) : (
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
                     {sessions.map((session) => (
-                      <SessionCard key={session.id} session={session} onClose={closeSession} />
+                      <SessionCard key={session.id} session={session} onClose={closeSession} onUpdateStartTime={updateSessionStartTime} />
                     ))}
                   </div>
                 )}

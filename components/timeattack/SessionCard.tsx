@@ -1,15 +1,33 @@
+import { useEffect, useState } from 'react';
 import { getSessionTimeRange, TimeAttackSession } from '@/data/timeAttackSessions';
 
 type SessionCardProps = {
   session: TimeAttackSession;
   onClose: (sessionId: string) => void;
+  onUpdateStartTime: (sessionId: string, startTime: string) => { ok: boolean; reason?: 'not-found' | 'invalid-time' };
 };
 
-export function SessionCard({ session, onClose }: SessionCardProps) {
+export function SessionCard({ session, onClose, onUpdateStartTime }: SessionCardProps) {
   const assignedCount = session.assignedPilots.length;
   const occupancyPercent = Math.min((assignedCount / session.maxCapacity) * 100, 100);
   const isClosed = session.status === 'closed';
   const timeRange = getSessionTimeRange(session.startTime, session.duration);
+  const [editableStartTime, setEditableStartTime] = useState(session.startTime);
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  useEffect(() => {
+    setEditableStartTime(session.startTime);
+  }, [session.startTime]);
+
+  const handleSaveTime = () => {
+    const result = onUpdateStartTime(session.id, editableStartTime);
+    if (!result.ok) {
+      setFeedback('Hora inválida. Usa formato HH:mm.');
+      return;
+    }
+
+    setFeedback('Hora guardada');
+  };
 
   return (
     <article
@@ -42,6 +60,29 @@ export function SessionCard({ session, onClose }: SessionCardProps) {
             className={`h-full rounded-full transition-all duration-300 ${isClosed ? 'bg-gp-racingRed/70' : 'bg-gp-telemetryBlue/70'}`}
             style={{ width: `${occupancyPercent}%` }}
           />
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-xs uppercase tracking-[0.13em] text-gp-textSoft">Hora de inicio</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="time"
+              value={editableStartTime}
+              onChange={(event) => {
+                setEditableStartTime(event.target.value);
+                setFeedback(null);
+              }}
+              className="w-full rounded-lg border border-white/20 bg-[rgba(17,24,38,0.75)] px-3 py-2 text-sm text-white outline-none transition-colors focus:border-gp-telemetryBlue/55"
+            />
+            <button
+              type="button"
+              onClick={handleSaveTime}
+              className="rounded-lg border border-gp-telemetryBlue/45 bg-gp-telemetryBlue/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.13em] text-cyan-200 transition-all duration-200 hover:bg-gp-telemetryBlue/20 hover:text-white"
+            >
+              Guardar
+            </button>
+          </div>
+          {feedback ? <p className="text-[11px] uppercase tracking-[0.12em] text-gp-textSoft">{feedback}</p> : null}
         </div>
 
         <div className="flex items-center justify-between gap-3">

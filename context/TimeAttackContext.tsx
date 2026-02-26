@@ -36,6 +36,7 @@ type TimeAttackContextValue = {
   isHydrated: boolean;
   bestReferenceTime: number | null;
   closeSession: (sessionId: string) => void;
+  updateSessionStartTime: (sessionId: string, startTime: string) => { ok: boolean; reason?: 'not-found' | 'invalid-time' };
   togglePilotAssignment: (sessionId: string, pilotId: string) => { ok: boolean; reason?: 'closed' | 'full' | 'not-found' };
   saveSessionTimes: (input: SaveSessionTimesInput) => { ok: boolean; reason?: 'closed' | 'not-found' };
 };
@@ -115,6 +116,35 @@ export function TimeAttackProvider({ children }: { children: React.ReactNode }) 
         )
       )
     );
+  };
+
+  const updateSessionStartTime = (
+    sessionId: string,
+    startTime: string
+  ): { ok: boolean; reason?: 'not-found' | 'invalid-time' } => {
+    if (!isValidTimeString(startTime)) {
+      return { ok: false, reason: 'invalid-time' };
+    }
+
+    const target = sessions.find((session) => session.id === sessionId);
+    if (!target) {
+      return { ok: false, reason: 'not-found' };
+    }
+
+    setSessions((prev) =>
+      sortSessions(
+        prev.map((session) =>
+          session.id === sessionId
+            ? {
+                ...session,
+                startTime
+              }
+            : session
+        )
+      )
+    );
+
+    return { ok: true };
   };
 
   const togglePilotAssignment = (
@@ -216,7 +246,7 @@ export function TimeAttackProvider({ children }: { children: React.ReactNode }) 
   }, [sessions]);
 
   const value = useMemo<TimeAttackContextValue>(
-    () => ({ sessions, isHydrated, bestReferenceTime, closeSession, togglePilotAssignment, saveSessionTimes }),
+    () => ({ sessions, isHydrated, bestReferenceTime, closeSession, updateSessionStartTime, togglePilotAssignment, saveSessionTimes }),
     [sessions, isHydrated, bestReferenceTime]
   );
 
@@ -276,8 +306,11 @@ function normalizeSessions(
     return {
       ...defaultSession,
       id: typeof stored.id === 'string' ? stored.id : defaultSession.id,
-      startTime: defaultSession.startTime,
-      duration: defaultSession.duration,
+      startTime: isValidTimeString(stored.startTime) ? stored.startTime : defaultSession.startTime,
+      duration:
+        typeof stored.duration === 'number' && Number.isFinite(stored.duration) && stored.duration > 0
+          ? Math.floor(stored.duration)
+          : defaultSession.duration,
       maxCapacity:
         typeof stored.maxCapacity === 'number' && Number.isFinite(stored.maxCapacity) && stored.maxCapacity > 0
           ? Math.floor(stored.maxCapacity)
@@ -335,4 +368,12 @@ function sessionNumber(name: string) {
   }
 
   return parsed;
+}
+
+function isValidTimeString(value: unknown): value is string {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  return /^([01]\d|2[0-3]):([0-5]\d)$/.test(value);
 }
