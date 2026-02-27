@@ -15,6 +15,11 @@ export default function ClassificationSessionsPage() {
   const {
     qualySessions,
     isHydrated,
+    addQualySession,
+    deleteQualySession,
+    updateQualySessionStartTime,
+    updateQualySessionDuration,
+    updateQualySessionCapacity,
     assignQualyByLevel,
     assignQualyByKart,
     assignQualyRandom,
@@ -28,6 +33,8 @@ export default function ClassificationSessionsPage() {
   const [assignMode, setAssignMode] = useState<'levels' | 'karts' | 'random' | 'manual'>('levels');
   const [manualSessionId, setManualSessionId] = useState<string | null>(null);
   const [manualAssignments, setManualAssignments] = useState<Record<string, string[]>>({});
+  const [sessionDrafts, setSessionDrafts] = useState<Record<string, { startTime: string; duration: string; maxCapacity: string }>>({});
+  const [feedback, setFeedback] = useState<string | null>(null);
 
   const selectedSession = useMemo(
     () => qualySessions.find((session) => session.id === selectedSessionId) ?? null,
@@ -41,6 +48,20 @@ export default function ClassificationSessionsPage() {
 
   const firstSession = qualySessions[0]?.name ?? 'Q1';
   const lastSession = qualySessions[qualySessions.length - 1]?.name ?? 'Q1';
+
+  useEffect(() => {
+    setSessionDrafts((prev) => {
+      const next: Record<string, { startTime: string; duration: string; maxCapacity: string }> = {};
+      qualySessions.forEach((session) => {
+        next[session.id] = {
+          startTime: prev[session.id]?.startTime ?? session.startTime,
+          duration: prev[session.id]?.duration ?? String(session.duration),
+          maxCapacity: prev[session.id]?.maxCapacity ?? String(session.maxCapacity)
+        };
+      });
+      return next;
+    });
+  }, [qualySessions]);
 
   const selectedSessionPilots = useMemo(() => {
     if (!selectedSession) {
@@ -82,6 +103,60 @@ export default function ClassificationSessionsPage() {
 
   const handleSessionClick = (sessionId: string) => {
     setSelectedSessionId((prev) => (prev === sessionId ? null : sessionId));
+  };
+
+  const updateDraftField = (sessionId: string, field: 'startTime' | 'duration' | 'maxCapacity', value: string) => {
+    setSessionDrafts((prev) => ({
+      ...prev,
+      [sessionId]: {
+        startTime: prev[sessionId]?.startTime ?? '11:30',
+        duration: prev[sessionId]?.duration ?? '5',
+        maxCapacity: prev[sessionId]?.maxCapacity ?? '1',
+        [field]: value
+      }
+    }));
+    setFeedback(null);
+  };
+
+  const handleSaveSessionConfig = (sessionId: string) => {
+    const draft = sessionDrafts[sessionId];
+    if (!draft) {
+      return;
+    }
+
+    const startResult = updateQualySessionStartTime(sessionId, draft.startTime);
+    if (!startResult.ok) {
+      setFeedback('Hora inválida. Usa formato HH:mm.');
+      return;
+    }
+
+    const durationResult = updateQualySessionDuration(sessionId, Number(draft.duration));
+    if (!durationResult.ok) {
+      setFeedback('Duración inválida. Debe ser mayor a 0.');
+      return;
+    }
+
+    const capacityResult = updateQualySessionCapacity(sessionId, Number(draft.maxCapacity));
+    if (!capacityResult.ok) {
+      setFeedback('Capacidad inválida. Debe ser mayor a 0.');
+      return;
+    }
+
+    setFeedback('Configuración de sesión guardada.');
+  };
+
+  const handleDeleteSession = (sessionId: string) => {
+    const result = deleteQualySession(sessionId);
+    if (!result.ok) {
+      setFeedback('No se puede borrar la última sesión.');
+      return;
+    }
+
+    if (selectedSessionId === sessionId) {
+      setSelectedSessionId(null);
+    }
+
+    setFeedback('Sesión eliminada.');
   };
 
   const handleManualToggle = (pilotId: string) => {
@@ -154,19 +229,38 @@ export default function ClassificationSessionsPage() {
                 <article className="rounded-2xl border border-white/10 bg-[rgba(17,24,38,0.72)] p-5 shadow-panel-deep backdrop-blur-xl">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <p className="text-xs uppercase tracking-[0.16em] text-gp-textSoft">{eventName.toUpperCase()} · CONFIGURACIÓN CERRADA</p>
+                      <p className="text-xs uppercase tracking-[0.16em] text-gp-textSoft">{eventName.toUpperCase()} · CONFIGURACIÓN DE SESIONES</p>
                       <h1 className="mt-2 text-3xl font-semibold uppercase tracking-[0.14em] text-white">Sesiones Oficiales Qualy {firstSession} — {lastSession}</h1>
-                      <p className="mt-2 text-sm text-gp-textSoft">Las sesiones son fijas y no admiten creación o borrado manual.</p>
+                      <p className="mt-2 text-sm text-gp-textSoft">Puedes editar hora, duración y capacidad de cada sesión. También puedes crear o borrar sesiones.</p>
                     </div>
 
-                    <Link
-                      href={`/admin/events/${activeEventId}/classification`}
-                      className="inline-flex items-center gap-2 rounded-lg border border-gp-telemetryBlue/45 bg-gp-telemetryBlue/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-cyan-200 transition-colors duration-200 hover:bg-gp-telemetryBlue/20"
-                    >
-                      <span aria-hidden>←</span>
-                      Volver a Classification
-                    </Link>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          addQualySession();
+                          setFeedback('Sesión Qualy añadida.');
+                        }}
+                        className="inline-flex items-center gap-2 rounded-lg border border-gp-racingRed/45 bg-gp-racingRed/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-red-200 transition-colors duration-200 hover:bg-gp-racingRed/20"
+                      >
+                        + Añadir sesión Qualy
+                      </button>
+
+                      <Link
+                        href={`/admin/events/${activeEventId}/classification`}
+                        className="inline-flex items-center gap-2 rounded-lg border border-gp-telemetryBlue/45 bg-gp-telemetryBlue/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-cyan-200 transition-colors duration-200 hover:bg-gp-telemetryBlue/20"
+                      >
+                        <span aria-hidden>←</span>
+                        Volver a Classification
+                      </Link>
+                    </div>
                   </div>
+
+                  {feedback ? (
+                    <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] uppercase tracking-[0.12em] text-gp-textSoft">
+                      {feedback}
+                    </div>
+                  ) : null}
 
                   <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                     <p className="text-[11px] uppercase tracking-[0.13em] text-gp-textSoft">Evento cerrado · asignación automática</p>
@@ -202,12 +296,15 @@ export default function ClassificationSessionsPage() {
                         const isCompleted = session.status === 'completed';
                         const timeRange = getQualySessionTimeRange(session.startTime, session.duration);
                         const isSelected = selectedSessionId === session.id;
+                        const draft = sessionDrafts[session.id] ?? {
+                          startTime: session.startTime,
+                          duration: String(session.duration),
+                          maxCapacity: String(session.maxCapacity)
+                        };
 
                         return (
-                          <button
+                          <article
                             key={session.id}
-                            type="button"
-                            onClick={() => handleSessionClick(session.id)}
                             className={`relative overflow-hidden rounded-2xl border p-5 text-left shadow-panel-deep backdrop-blur-xl transition-all duration-300 ${
                               isSelected
                                 ? 'scale-[1.01] border-gp-racingRed/55 bg-[rgba(30,20,26,0.78)]'
@@ -222,7 +319,16 @@ export default function ClassificationSessionsPage() {
                             <span className="pointer-events-none absolute bottom-3 right-3 h-4 w-4 border-b border-r border-gp-telemetryBlue/45" />
 
                             <div className="relative z-10 space-y-3">
-                              <h2 className="text-4xl font-semibold uppercase tracking-[0.14em] text-white">{session.name}</h2>
+                              <div className="flex items-center justify-between gap-2">
+                                <h2 className="text-4xl font-semibold uppercase tracking-[0.14em] text-white">{session.name}</h2>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSessionClick(session.id)}
+                                  className="rounded-lg border border-gp-telemetryBlue/45 bg-gp-telemetryBlue/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.13em] text-cyan-200 transition-colors duration-200 hover:bg-gp-telemetryBlue/20 hover:text-white"
+                                >
+                                  {isSelected ? 'Ocultar pilotos' : 'Ver pilotos asignados'}
+                                </button>
+                              </div>
                               <p className="text-sm font-semibold uppercase tracking-[0.12em] text-gp-textSoft">{session.groupName}</p>
                               <p className="text-base font-semibold uppercase tracking-[0.12em] text-cyan-200">{timeRange}</p>
 
@@ -230,7 +336,7 @@ export default function ClassificationSessionsPage() {
 
                               <div className="flex items-center justify-between gap-3">
                                 <p className="text-xs uppercase tracking-[0.12em] text-gp-textSoft">
-                                  Pilotos asignados: <span className="font-semibold text-white">{session.assignedPilots.length}</span>
+                                  Pilotos asignados: <span className="font-semibold text-white">{session.assignedPilots.length}</span> / {session.maxCapacity}
                                 </p>
                                 <span
                                   className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] ${
@@ -243,8 +349,50 @@ export default function ClassificationSessionsPage() {
                                   {isCompleted ? 'Completed' : 'Pending'}
                                 </span>
                               </div>
+
+                              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                                <input
+                                  type="time"
+                                  value={draft.startTime}
+                                  onChange={(event) => updateDraftField(session.id, 'startTime', event.target.value)}
+                                  className="rounded-lg border border-white/20 bg-[rgba(17,24,38,0.75)] px-3 py-2 text-xs text-white outline-none transition-colors focus:border-gp-telemetryBlue/55"
+                                />
+                                <input
+                                  type="number"
+                                  min={1}
+                                  value={draft.duration}
+                                  onChange={(event) => updateDraftField(session.id, 'duration', event.target.value)}
+                                  className="rounded-lg border border-white/20 bg-[rgba(17,24,38,0.75)] px-3 py-2 text-xs text-white outline-none transition-colors focus:border-gp-telemetryBlue/55"
+                                  placeholder="Duración"
+                                />
+                                <input
+                                  type="number"
+                                  min={1}
+                                  value={draft.maxCapacity}
+                                  onChange={(event) => updateDraftField(session.id, 'maxCapacity', event.target.value)}
+                                  className="rounded-lg border border-white/20 bg-[rgba(17,24,38,0.75)] px-3 py-2 text-xs text-white outline-none transition-colors focus:border-gp-telemetryBlue/55"
+                                  placeholder="Capacidad"
+                                />
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveSessionConfig(session.id)}
+                                  className="rounded-lg border border-gp-telemetryBlue/45 bg-gp-telemetryBlue/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.13em] text-cyan-200 transition-colors duration-200 hover:bg-gp-telemetryBlue/20 hover:text-white"
+                                >
+                                  Guardar cambios
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteSession(session.id)}
+                                  className="rounded-lg border border-gp-racingRed/45 bg-gp-racingRed/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.13em] text-red-200 transition-colors duration-200 hover:bg-gp-racingRed/20 hover:text-white"
+                                >
+                                  Borrar sesión
+                                </button>
+                              </div>
                             </div>
-                          </button>
+                          </article>
                         );
                       })}
                     </div>

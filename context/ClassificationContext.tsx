@@ -21,6 +21,7 @@ export type QualySession = {
   groupName: QualyGroupName;
   startTime: string;
   duration: number;
+  maxCapacity: number;
   assignedPilots: string[];
   status: 'pending' | 'completed';
   times: QualyPilotTime[];
@@ -49,6 +50,7 @@ type LegacyQualySession = {
   groupName?: string;
   startTime?: string;
   duration?: number;
+  maxCapacity?: number;
   assignedPilots?: string[];
   status?: 'pending' | 'completed';
   times?: Array<Partial<QualyPilotTime>>;
@@ -59,6 +61,11 @@ type ClassificationContextValue = {
   qualyRecords: QualyRecord[];
   isHydrated: boolean;
   groups: QualyGroupName[];
+  addQualySession: () => { ok: true; id: string };
+  deleteQualySession: (sessionId: string) => { ok: boolean; reason?: 'not-found' | 'last-session' };
+  updateQualySessionStartTime: (sessionId: string, startTime: string) => { ok: boolean; reason?: 'not-found' | 'invalid-time' };
+  updateQualySessionDuration: (sessionId: string, duration: number) => { ok: boolean; reason?: 'not-found' | 'invalid-duration' };
+  updateQualySessionCapacity: (sessionId: string, maxCapacity: number) => { ok: boolean; reason?: 'not-found' | 'invalid-capacity' };
   saveQualyTimes: (entries: SaveQualyInput[]) => void;
   recalculateQualyAssignments: () => void;
   assignQualyByLevel: () => void;
@@ -174,6 +181,144 @@ export function ClassificationProvider({ children }: { children: React.ReactNode
     );
   };
 
+  const addQualySession = (): { ok: true; id: string } => {
+    const nextNumber = getNextQualySessionNumber(qualySessions);
+    const nextName = `Q${nextNumber}`;
+    const nextGroupName = `Grupo ${nextNumber}`;
+    const nextStartTime = getNextQualySessionStartTime(qualySessions);
+    const nextDuration = qualySessions[0]?.duration ?? QUALY_DURATION_MINUTES;
+    const nextCapacity = qualySessions[0]?.maxCapacity ?? Math.max(1, Math.ceil(pilots.length / Math.max(qualySessions.length, 1)));
+    const id = crypto.randomUUID();
+
+    setQualySessions((prev) =>
+      sortQualySessions([
+        ...prev,
+        {
+          id,
+          name: nextName,
+          groupName: nextGroupName,
+          startTime: nextStartTime,
+          duration: nextDuration,
+          maxCapacity: nextCapacity,
+          assignedPilots: [],
+          status: 'pending',
+          times: []
+        }
+      ])
+    );
+
+    return { ok: true, id };
+  };
+
+  const deleteQualySession = (sessionId: string): { ok: boolean; reason?: 'not-found' | 'last-session' } => {
+    const exists = qualySessions.some((session) => session.id === sessionId);
+    if (!exists) {
+      return { ok: false, reason: 'not-found' };
+    }
+
+    if (qualySessions.length <= 1) {
+      return { ok: false, reason: 'last-session' };
+    }
+
+    setQualySessions((prev) => prev.filter((session) => session.id !== sessionId));
+    return { ok: true };
+  };
+
+  const updateQualySessionStartTime = (
+    sessionId: string,
+    startTime: string
+  ): { ok: boolean; reason?: 'not-found' | 'invalid-time' } => {
+    if (!isValidTimeString(startTime)) {
+      return { ok: false, reason: 'invalid-time' };
+    }
+
+    const exists = qualySessions.some((session) => session.id === sessionId);
+    if (!exists) {
+      return { ok: false, reason: 'not-found' };
+    }
+
+    setQualySessions((prev) =>
+      sortQualySessions(
+        prev.map((session) =>
+          session.id === sessionId
+            ? {
+                ...session,
+                startTime
+              }
+            : session
+        )
+      )
+    );
+
+    return { ok: true };
+  };
+
+  const updateQualySessionDuration = (
+    sessionId: string,
+    duration: number
+  ): { ok: boolean; reason?: 'not-found' | 'invalid-duration' } => {
+    if (!Number.isFinite(duration) || duration <= 0) {
+      return { ok: false, reason: 'invalid-duration' };
+    }
+
+    const safeDuration = Math.floor(duration);
+    const exists = qualySessions.some((session) => session.id === sessionId);
+    if (!exists) {
+      return { ok: false, reason: 'not-found' };
+    }
+
+    setQualySessions((prev) =>
+      prev.map((session) =>
+        session.id === sessionId
+          ? {
+              ...session,
+              duration: safeDuration
+            }
+          : session
+      )
+    );
+
+    return { ok: true };
+  };
+
+  const updateQualySessionCapacity = (
+    sessionId: string,
+    maxCapacity: number
+  ): { ok: boolean; reason?: 'not-found' | 'invalid-capacity' } => {
+    if (!Number.isFinite(maxCapacity) || maxCapacity <= 0) {
+      return { ok: false, reason: 'invalid-capacity' };
+    }
+
+    const safeCapacity = Math.floor(maxCapacity);
+    const exists = qualySessions.some((session) => session.id === sessionId);
+    if (!exists) {
+      return { ok: false, reason: 'not-found' };
+    }
+
+    setQualySessions((prev) =>
+      prev.map((session) => {
+        if (session.id !== sessionId) {
+          return session;
+        }
+
+        const assignedPilots = session.assignedPilots.slice(0, safeCapacity);
+        const times = session.times.filter((time) => assignedPilots.includes(time.pilotId));
+        const status: QualySession['status'] =
+          assignedPilots.length > 0 && times.length === assignedPilots.length ? 'completed' : 'pending';
+
+        return {
+          ...session,
+          maxCapacity: safeCapacity,
+          assignedPilots,
+          times,
+          status
+        };
+      })
+    );
+
+    return { ok: true };
+  };
+
   const recalculateQualyAssignments = () => {
     if (!eventConfig) {
       return;
@@ -254,6 +399,11 @@ export function ClassificationProvider({ children }: { children: React.ReactNode
       qualyRecords,
       isHydrated,
       groups,
+      addQualySession,
+      deleteQualySession,
+      updateQualySessionStartTime,
+      updateQualySessionDuration,
+      updateQualySessionCapacity,
       saveQualyTimes,
       recalculateQualyAssignments,
       assignQualyByLevel,
@@ -334,6 +484,8 @@ function buildDefaultQualyRecords(pilots: PilotRecord[]): QualyRecord[] {
 
 function buildDefaultQualySessions(_pilots: PilotRecord[], groupsCount: number, _maxParticipants: number): QualySession[] {
   const config = buildQualySessionsConfig(groupsCount);
+  const safeGroups = config.length > 0 ? config.length : 1;
+  const defaultCapacity = Math.max(1, Math.ceil(sanitizePositive(_maxParticipants, _pilots.length || 1) / safeGroups));
 
   return config.map((sessionConfig) => {
     return {
@@ -342,6 +494,7 @@ function buildDefaultQualySessions(_pilots: PilotRecord[], groupsCount: number, 
       groupName: sessionConfig.groupName,
       startTime: sessionConfig.startTime,
       duration: QUALY_DURATION_MINUTES,
+      maxCapacity: defaultCapacity,
       assignedPilots: [],
       status: 'pending',
       times: []
@@ -411,16 +564,24 @@ function normalizeQualySessions(stored: unknown, pilots: PilotRecord[], groupsCo
     return {
       ...defaultSession,
       id: typeof found.id === 'string' ? found.id : defaultSession.id,
-      groupName: defaultSession.groupName,
-      startTime: defaultSession.startTime,
-      duration: QUALY_DURATION_MINUTES,
-      assignedPilots,
+      name: parseSessionName(found.name) ?? defaultSession.name,
+      groupName: parseGroup(found.groupName) ?? defaultSession.groupName,
+      startTime: isValidTimeString(found.startTime) ? found.startTime : defaultSession.startTime,
+      duration:
+        typeof found.duration === 'number' && Number.isFinite(found.duration) && found.duration > 0
+          ? Math.floor(found.duration)
+          : defaultSession.duration,
+      maxCapacity:
+        typeof found.maxCapacity === 'number' && Number.isFinite(found.maxCapacity) && found.maxCapacity > 0
+          ? Math.floor(found.maxCapacity)
+          : defaultSession.maxCapacity,
+      assignedPilots: assignedPilots.slice(0, typeof found.maxCapacity === 'number' && found.maxCapacity > 0 ? Math.floor(found.maxCapacity) : defaultSession.maxCapacity),
       status,
       times
     };
   });
 
-  return normalized;
+  return sortQualySessions(normalized);
 }
 
 function shouldAutoAssign(sessions: QualySession[]) {
@@ -555,7 +716,8 @@ function buildSessionsFromAssignments(
 
   return config.map((sessionConfig) => {
     const base = existingByName.get(sessionConfig.name);
-    const assignedPilots = assignmentsBySession.get(sessionConfig.name) ?? [];
+    const maxCapacity = base?.maxCapacity ?? Math.max(1, Math.ceil((sessions.reduce((acc, item) => acc + item.assignedPilots.length, 0) || 1) / Math.max(config.length, 1)));
+    const assignedPilots = (assignmentsBySession.get(sessionConfig.name) ?? []).slice(0, maxCapacity);
 
     const times = assignedPilots
       .map((pilotId) => {
@@ -579,7 +741,8 @@ function buildSessionsFromAssignments(
       name: sessionConfig.name,
       groupName: sessionConfig.groupName,
       startTime: sessionConfig.startTime,
-      duration: QUALY_DURATION_MINUTES,
+      duration: base?.duration ?? QUALY_DURATION_MINUTES,
+      maxCapacity,
       assignedPilots,
       status,
       times
@@ -692,6 +855,57 @@ function buildQualySessionsConfig(groupsCount: number) {
     groupName: `Grupo ${index + 1}`,
     startTime: buildClockTime('11:30', index * 10)
   }));
+}
+
+function sortQualySessions(list: QualySession[]) {
+  return [...list].sort((a, b) => sessionNumber(a.name) - sessionNumber(b.name));
+}
+
+function sessionNumber(name: string) {
+  const parsed = Number(name.replace(/[^0-9]/g, ''));
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+
+  return parsed;
+}
+
+function getNextQualySessionNumber(list: QualySession[]) {
+  const maxNumber = list.reduce((max, session) => Math.max(max, sessionNumber(session.name)), 0);
+  if (!Number.isFinite(maxNumber) || maxNumber <= 0 || maxNumber === Number.MAX_SAFE_INTEGER) {
+    return list.length + 1;
+  }
+
+  return maxNumber + 1;
+}
+
+function getNextQualySessionStartTime(list: QualySession[]) {
+  if (list.length === 0) {
+    return '11:30';
+  }
+
+  const sorted = sortQualySessions(list);
+  const last = sorted[sorted.length - 1];
+  const [hourPart, minutePart] = last.startTime.split(':');
+  const hour = Number(hourPart);
+  const minute = Number(minutePart);
+
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) {
+    return '11:30';
+  }
+
+  const total = hour * 60 + minute + 10;
+  const nextHour = Math.floor(total / 60) % 24;
+  const nextMinute = total % 60;
+  return `${String(nextHour).padStart(2, '0')}:${String(nextMinute).padStart(2, '0')}`;
+}
+
+function isValidTimeString(value: unknown): value is string {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  return /^([01]\d|2[0-3]):([0-5]\d)$/.test(value);
 }
 
 function sanitizePositive(value: number | undefined, fallback: number) {
