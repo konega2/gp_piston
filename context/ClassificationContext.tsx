@@ -335,7 +335,14 @@ export function ClassificationProvider({ children }: { children: React.ReactNode
       return;
     }
 
-    setQualySessions((prev) => applyAssignmentsByLevel(prev, pilots, eventConfig.qualyGroups, eventConfig.maxParticipants));
+    setQualySessions((prev) =>
+      applyAssignmentsByLevel(
+        prev,
+        pilots,
+        getEffectiveGroupsCount(eventConfig.qualyGroups, prev),
+        eventConfig.maxParticipants
+      )
+    );
   };
 
   const assignQualyByLevel = () => {
@@ -344,7 +351,13 @@ export function ClassificationProvider({ children }: { children: React.ReactNode
     }
 
     setQualySessions((prev) =>
-      applyAssignmentsByPilotOrder(prev, pilots, eventConfig.qualyGroups, eventConfig.maxParticipants, orderPilotsByLevel)
+      applyAssignmentsByPilotOrder(
+        prev,
+        pilots,
+        getEffectiveGroupsCount(eventConfig.qualyGroups, prev),
+        eventConfig.maxParticipants,
+        orderPilotsByLevel
+      )
     );
   };
 
@@ -354,7 +367,13 @@ export function ClassificationProvider({ children }: { children: React.ReactNode
     }
 
     setQualySessions((prev) =>
-      applyAssignmentsByPilotOrder(prev, pilots, eventConfig.qualyGroups, eventConfig.maxParticipants, orderPilotsByKart)
+      applyAssignmentsByPilotOrder(
+        prev,
+        pilots,
+        getEffectiveGroupsCount(eventConfig.qualyGroups, prev),
+        eventConfig.maxParticipants,
+        orderPilotsByKart
+      )
     );
   };
 
@@ -364,7 +383,13 @@ export function ClassificationProvider({ children }: { children: React.ReactNode
     }
 
     setQualySessions((prev) =>
-      applyAssignmentsByPilotOrder(prev, pilots, eventConfig.qualyGroups, eventConfig.maxParticipants, shufflePilots)
+      applyAssignmentsByPilotOrder(
+        prev,
+        pilots,
+        getEffectiveGroupsCount(eventConfig.qualyGroups, prev),
+        eventConfig.maxParticipants,
+        shufflePilots
+      )
     );
   };
 
@@ -374,7 +399,13 @@ export function ClassificationProvider({ children }: { children: React.ReactNode
     }
 
     setQualySessions((prev) =>
-      applyManualAssignments(prev, pilots, eventConfig.qualyGroups, eventConfig.maxParticipants, manualAssignments)
+      applyManualAssignments(
+        prev,
+        pilots,
+        getEffectiveGroupsCount(eventConfig.qualyGroups, prev),
+        eventConfig.maxParticipants,
+        manualAssignments
+      )
     );
   };
 
@@ -514,7 +545,8 @@ function buildDefaultQualySessions(_pilots: PilotRecord[], groupsCount: number, 
 }
 
 function normalizeQualySessions(stored: unknown, pilots: PilotRecord[], groupsCount: number, maxParticipants: number): QualySession[] {
-  const defaults = buildDefaultQualySessions(pilots, groupsCount, maxParticipants);
+  const effectiveGroupsCount = getEffectiveGroupsCount(groupsCount, Array.isArray(stored) ? (stored as LegacyQualySession[]) : []);
+  const defaults = buildDefaultQualySessions(pilots, effectiveGroupsCount, maxParticipants);
   const availablePilotIds = new Set(pilots.map((pilot) => pilot.id));
   if (!Array.isArray(stored)) {
     return defaults;
@@ -866,6 +898,21 @@ function buildQualySessionsConfig(groupsCount: number) {
     groupName: `Grupo ${index + 1}`,
     startTime: buildClockTime('11:30', index * 10)
   }));
+}
+
+function getEffectiveGroupsCount(groupsCount: number, sessions: Array<{ name?: string }> = []) {
+  const base = sanitizePositive(groupsCount, 1);
+  const maxFromSessions = sessions.reduce((max, session) => {
+    const name = typeof session?.name === 'string' ? session.name : '';
+    const numeric = sessionNumber(name);
+    if (!Number.isFinite(numeric) || numeric === Number.MAX_SAFE_INTEGER) {
+      return max;
+    }
+    return Math.max(max, numeric);
+  }, 0);
+
+  const byLength = Array.isArray(sessions) ? sessions.length : 0;
+  return Math.max(base, maxFromSessions, byLength, 1);
 }
 
 function sortQualySessions(list: QualySession[]) {
