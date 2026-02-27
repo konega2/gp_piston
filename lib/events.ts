@@ -51,6 +51,15 @@ export type EventInput = {
   raceCount: number;
 };
 
+export type EventRuntimeConfigPatch = Partial<{
+  maxPilots: number;
+  sessionMaxCapacity: number;
+  timeAttackSessions: number;
+  qualyGroups: number;
+  teamsCount: number;
+  raceCount: number;
+}>;
+
 const ensureValidEventInput = (data: EventInput) => {
   if (!data.name.trim() || !data.date.trim() || !data.location.trim()) {
     throw new Error('Datos de evento inválidos.');
@@ -143,5 +152,47 @@ export async function deleteEvent(id: string): Promise<void> {
     await sql`DELETE FROM events WHERE id = ${id};`;
   } catch {
     throw new Error('No se pudo eliminar el evento.');
+  }
+}
+
+export async function updateEventConfigPatch(id: string, patch: EventRuntimeConfigPatch): Promise<void> {
+  await ensureEventsTable();
+
+  const current = await getEventById(id);
+  if (!current) {
+    throw new Error('Evento no encontrado.');
+  }
+
+  const currentConfig = (current.config ?? {}) as Record<string, unknown>;
+  const nextConfig = { ...currentConfig };
+
+  const applyPositive = (key: keyof EventRuntimeConfigPatch) => {
+    const value = patch[key];
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+      return;
+    }
+
+    nextConfig[key] = Math.floor(value);
+  };
+
+  applyPositive('maxPilots');
+  applyPositive('sessionMaxCapacity');
+  applyPositive('timeAttackSessions');
+  applyPositive('qualyGroups');
+  applyPositive('teamsCount');
+  applyPositive('raceCount');
+
+  if (typeof nextConfig.raceCount === 'number') {
+    nextConfig.racesCount = nextConfig.raceCount;
+  }
+
+  try {
+    await sql`
+      UPDATE events
+      SET config = ${JSON.stringify(nextConfig)}::jsonb
+      WHERE id = ${id};
+    `;
+  } catch {
+    throw new Error('No se pudo actualizar la configuración del evento.');
   }
 }

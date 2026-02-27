@@ -102,10 +102,13 @@ export default async function EditEventPage({
                   />
                   <Field
                     label="Cantidad carreras"
-                    name="raceCount"
+                    name="raceCountReadonly"
                     type="number"
                     defaultValue={String(eventData.config?.raceCount ?? 2)}
+                    disabled
+                    helperText="Se configura únicamente desde el módulo de Carreras"
                   />
+                  <input type="hidden" name="raceCount" value={String(eventData.config?.raceCount ?? 2)} />
                 </div>
 
                 {error ? (
@@ -131,12 +134,16 @@ function Field({
   label,
   name,
   defaultValue,
-  type = 'text'
+  type = 'text',
+  disabled = false,
+  helperText
 }: {
   label: string;
   name: string;
   defaultValue: string;
   type?: 'text' | 'number' | 'date';
+  disabled?: boolean;
+  helperText?: string;
 }) {
   return (
     <label className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
@@ -145,10 +152,12 @@ function Field({
         name={name}
         type={type}
         defaultValue={defaultValue}
-        required
+        required={!disabled}
+        disabled={disabled}
         min={type === 'number' ? 1 : undefined}
-        className="mt-2 w-full bg-transparent text-sm uppercase tracking-[0.08em] text-white outline-none"
+        className="mt-2 w-full bg-transparent text-sm uppercase tracking-[0.08em] text-white outline-none disabled:cursor-not-allowed disabled:text-gp-textSoft"
       />
+      {helperText ? <p className="mt-1 text-[10px] uppercase tracking-[0.12em] text-gp-textSoft">{helperText}</p> : null}
     </label>
   );
 }

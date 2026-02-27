@@ -34,7 +34,7 @@ import {
   type QualySessionDB,
   type TimeAttackSessionDB
 } from '@/lib/sessions';
-import { getEventById } from '@/lib/events';
+import { getEventById, updateEventConfigPatch, type EventRuntimeConfigPatch } from '@/lib/events';
 
 type EventRuntimeConfig = {
   maxPilots: number;
@@ -44,6 +44,15 @@ type EventRuntimeConfig = {
   teamsCount: number;
   raceCount: number;
 };
+
+type EventRuntimeConfigInput = Partial<{
+  maxPilots: number;
+  sessionMaxCapacity: number;
+  timeAttackSessions: number;
+  qualyGroups: number;
+  teamsCount: number;
+  raceCount: number;
+}>;
 
 function toPositiveInt(value: unknown): number | null {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
@@ -132,6 +141,35 @@ export async function getEventInfoAction(eventId: string) {
       date: null,
       config: null
     };
+  }
+}
+
+export async function updateEventRuntimeConfigAction(eventId: string, patch: EventRuntimeConfigInput) {
+  try {
+    const sanitized: EventRuntimeConfigPatch = {};
+
+    const apply = (key: keyof EventRuntimeConfigInput) => {
+      const value = patch[key];
+      const parsed = toPositiveInt(value);
+      if (!parsed) {
+        return;
+      }
+
+      sanitized[key] = parsed;
+    };
+
+    apply('maxPilots');
+    apply('sessionMaxCapacity');
+    apply('timeAttackSessions');
+    apply('qualyGroups');
+    apply('teamsCount');
+    apply('raceCount');
+
+    await updateEventConfigPatch(eventId, sanitized);
+    revalidateEventPaths(eventId);
+    return { ok: true as const };
+  } catch {
+    return { ok: false as const, error: 'No se pudo actualizar la configuración del evento.' };
   }
 }
 

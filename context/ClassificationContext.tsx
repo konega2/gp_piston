@@ -6,6 +6,7 @@ import { useActiveEvent } from '@/context/ActiveEventContext';
 import { usePilots } from '@/context/PilotsContext';
 import { loadModuleState, saveModuleState } from '@/lib/eventStateClient';
 import { useEventRuntimeConfig } from '@/lib/event-client';
+import { updateEventRuntimeConfigAction } from '@/app/admin/events/[eventId]/actions';
 
 export type QualySessionName = string;
 export type QualyGroupName = string;
@@ -143,6 +144,16 @@ export function ClassificationProvider({ children }: { children: React.ReactNode
 
     void saveModuleState(activeEventId, 'qualy', qualySessions);
   }, [isHydrated, qualySessions, activeEventHydrated, activeEventId]);
+
+  useEffect(() => {
+    if (!isHydrated || !activeEventHydrated || qualySessions.length === 0) {
+      return;
+    }
+
+    void updateEventRuntimeConfigAction(activeEventId, {
+      qualyGroups: qualySessions.length
+    });
+  }, [isHydrated, activeEventHydrated, activeEventId, qualySessions.length]);
 
   const saveQualyTimes = (entries: SaveQualyInput[]) => {
     const timeMap = new Map<string, number | null>();

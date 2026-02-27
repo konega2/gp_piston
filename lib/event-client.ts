@@ -54,12 +54,6 @@ export function useEventInfo(eventId: string) {
     let cancelled = false;
 
     void (async () => {
-      const cached = cache.get(eventId);
-      if (cached) {
-        setEventInfo(cached);
-        return;
-      }
-
       const info = await fetchEventInfo(eventId);
       if (cancelled) return;
 

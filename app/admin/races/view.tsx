@@ -11,6 +11,7 @@ import { useTimeAttackSessions } from '@/context/TimeAttackContext';
 import { loadModuleState, saveModuleState } from '@/lib/eventStateClient';
 import { useEventRuntimeConfig } from '@/lib/event-client';
 import { buildCombinedStandings } from '@/lib/combinedStandings';
+import { updateEventRuntimeConfigAction } from '@/app/admin/events/[eventId]/actions';
 
 type RacePilot = {
   pilotId: string;
@@ -237,6 +238,11 @@ export default function RacesPage() {
       race1: toLegacyRaceGrid(races[0] ?? null),
       race2: toLegacyRaceGrid(races[1] ?? null)
     });
+
+    void updateEventRuntimeConfigAction(activeEventId, {
+      raceCount: validated.config.raceCount
+    });
+
     setConfigDraft(validated.config);
     setFeedback('Parrillas generadas con la configuración actual.');
     setIsConfigOpen(false);

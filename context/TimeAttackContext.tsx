@@ -11,6 +11,7 @@ import { useActiveEvent } from '@/context/ActiveEventContext';
 import { usePilots } from '@/context/PilotsContext';
 import { loadModuleState, saveModuleState } from '@/lib/eventStateClient';
 import { useEventRuntimeConfig } from '@/lib/event-client';
+import { updateEventRuntimeConfigAction } from '@/app/admin/events/[eventId]/actions';
 
 type LegacyTimeAttackSession = {
   id: string;
@@ -105,6 +106,26 @@ export function TimeAttackProvider({ children }: { children: React.ReactNode }) 
 
     void saveModuleState(activeEventId, 'timeAttack', sessions);
   }, [sessions, isHydrated, activeEventHydrated, activeEventId]);
+
+  const syncedSessionCount = sessions.length;
+  const syncedMaxCapacity = useMemo(() => {
+    if (sessions.length === 0) {
+      return null;
+    }
+
+    return sessions.reduce((max, session) => Math.max(max, session.maxCapacity), 1);
+  }, [sessions]);
+
+  useEffect(() => {
+    if (!isHydrated || !activeEventHydrated || !syncedMaxCapacity) {
+      return;
+    }
+
+    void updateEventRuntimeConfigAction(activeEventId, {
+      timeAttackSessions: syncedSessionCount,
+      sessionMaxCapacity: syncedMaxCapacity
+    });
+  }, [isHydrated, activeEventHydrated, activeEventId, syncedSessionCount, syncedMaxCapacity]);
 
   const addSession = (): { ok: boolean; id: string } => {
     const nextNumber = getNextSessionNumber(sessions);
