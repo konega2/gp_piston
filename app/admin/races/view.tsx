@@ -9,6 +9,7 @@ import { useClassification } from '@/context/ClassificationContext';
 import { usePilots } from '@/context/PilotsContext';
 import { useTimeAttackSessions } from '@/context/TimeAttackContext';
 import { loadModuleState, saveModuleState } from '@/lib/eventStateClient';
+import { useEventRuntimeConfig } from '@/lib/event-client';
 import { buildCombinedStandings } from '@/lib/combinedStandings';
 
 type RacePilot = {
@@ -17,21 +18,46 @@ type RacePilot = {
   fullName: string;
   teamName: string;
   classificationPosition: number;
+  startPosition: number;
 };
 
 type RaceGroupGrid = {
+  id: string;
+  name: string;
   category390: RacePilot[];
   category270: RacePilot[];
 };
 
 type RaceGrid = {
-  group1: RaceGroupGrid;
-  group2: RaceGroupGrid;
+  id: string;
+  name: string;
+  startTime: string;
+  groups: RaceGroupGrid[];
+};
+
+type LegacyRaceGroupGrid = {
+  category390: Array<Omit<RacePilot, 'startPosition'>>;
+  category270: Array<Omit<RacePilot, 'startPosition'>>;
+};
+
+type LegacyRaceGrid = {
+  group1: LegacyRaceGroupGrid;
+  group2: LegacyRaceGroupGrid;
+};
+
+type RaceConfig = {
+  raceCount: number;
+  groupsPerRace: number;
+  pilotsPerGroup: number;
+  firstRaceStartTime: string;
+  raceIntervalMinutes: number;
 };
 
 type StoredRaces = {
-  race1: RaceGrid | null;
-  race2: RaceGrid | null;
+  config: RaceConfig;
+  races: RaceGrid[];
+  race1: LegacyRaceGrid | null;
+  race2: LegacyRaceGrid | null;
 };
 
 type TeamRecord = {
@@ -40,14 +66,29 @@ type TeamRecord = {
   members: string[];
 };
 
+const DEFAULT_CONFIG: RaceConfig = {
+  raceCount: 2,
+  groupsPerRace: 2,
+  pilotsPerGroup: 8,
+  firstRaceStartTime: '12:30',
+  raceIntervalMinutes: 20
+};
+
 export default function RacesPage() {
   const { activeEventId, isHydrated: activeEventHydrated } = useActiveEvent();
+  const runtimeConfig = useEventRuntimeConfig(activeEventId);
   const { pilots, isHydrated: pilotsHydrated } = usePilots();
   const { sessions, isHydrated: sessionsHydrated } = useTimeAttackSessions();
   const { qualyRecords, isHydrated: qualyHydrated } = useClassification();
 
   const [teams, setTeams] = useState<TeamRecord[]>([]);
-  const [storedRaces, setStoredRaces] = useState<StoredRaces>({ race1: null, race2: null });
+  const [stored, setStored] = useState<StoredRaces>(() => ({
+    config: DEFAULT_CONFIG,
+    races: [],
+    race1: null,
+    race2: null
+  }));
+  const [configDraft, setConfigDraft] = useState<RaceConfig>(DEFAULT_CONFIG);
   const [isHydrated, setIsHydrated] = useState(false);
   const [feedback, setFeedback] = useState('');
 
@@ -56,14 +97,14 @@ export default function RacesPage() {
     [pilots, sessions, qualyRecords]
   );
 
-  const pilotsById = useMemo(() => new Map(pilots.map((pilot) => [pilot.id, pilot])), [pilots]);
-
   const standingsWithPosition = useMemo(
     () => combinedStandings.map((item, index) => ({ ...item, position: index + 1 })),
     [combinedStandings]
   );
 
   const hasClassification = standingsWithPosition.length > 0;
+
+  const pilotsById = useMemo(() => new Map(pilots.map((pilot) => [pilot.id, pilot])), [pilots]);
 
   const teamByPilotId = useMemo(() => {
     const map = new Map<string, string>();
@@ -76,6 +117,22 @@ export default function RacesPage() {
     });
     return map;
   }, [teams]);
+
+  const qualyTimeByPilot = useMemo(() => {
+    const map = new Map<string, number>();
+    qualyRecords.forEach((record) => {
+      if (!Number.isFinite(record.qualyTime) || (record.qualyTime ?? 0) <= 0) {
+        return;
+      }
+
+      const current = map.get(record.pilotId);
+      if (typeof current !== 'number' || (record.qualyTime as number) < current) {
+        map.set(record.pilotId, record.qualyTime as number);
+      }
+    });
+
+    return map;
+  }, [qualyRecords]);
 
   useEffect(() => {
     if (!(pilotsHydrated && sessionsHydrated && qualyHydrated && activeEventHydrated)) {
@@ -104,74 +161,158 @@ export default function RacesPage() {
           setTeams([]);
         }
 
-        const parsedRaces = await loadModuleState<StoredRaces>(activeEventId, 'races', { race1: null, race2: null });
-        setStoredRaces({
-          race1: isRaceGrid(parsedRaces?.race1) ? parsedRaces.race1 : null,
-          race2: isRaceGrid(parsedRaces?.race2) ? parsedRaces.race2 : null
-        });
+        const runtimeDefaultConfig = buildDefaultRaceConfig(runtimeConfig, pilots.length);
+        const parsedStored = await loadModuleState<unknown>(activeEventId, 'races', null);
+        const normalized = normalizeStoredRaces(parsedStored, runtimeDefaultConfig);
+
+        setStored(normalized);
+        setConfigDraft(normalized.config);
       } finally {
         setIsHydrated(true);
       }
     })();
-  }, [pilotsHydrated, sessionsHydrated, qualyHydrated, activeEventHydrated, activeEventId]);
+  }, [pilotsHydrated, sessionsHydrated, qualyHydrated, activeEventHydrated, activeEventId, runtimeConfig, pilots.length]);
 
   useEffect(() => {
     if (!isHydrated) {
       return;
     }
 
-    void saveModuleState(activeEventId, 'races', storedRaces);
-  }, [isHydrated, storedRaces, activeEventId]);
-
-  const qualyTimeByPilot = useMemo(() => {
-    const map = new Map<string, number>();
-    qualyRecords.forEach((record) => {
-      if (!Number.isFinite(record.qualyTime) || (record.qualyTime ?? 0) <= 0) {
-        return;
-      }
-
-      const current = map.get(record.pilotId);
-      if (typeof current !== 'number' || (record.qualyTime as number) < current) {
-        map.set(record.pilotId, record.qualyTime as number);
-      }
-    });
-
-    return map;
-  }, [qualyRecords]);
+    void saveModuleState(activeEventId, 'races', stored);
+  }, [isHydrated, stored, activeEventId]);
 
   useEffect(() => {
     if (!isHydrated) {
       return;
     }
 
-    setStoredRaces((prev) => syncStoredRacesWithTeams(prev, teamByPilotId));
+    setStored((prev) => syncStoredRacesWithTeams(prev, teamByPilotId));
   }, [isHydrated, teamByPilotId]);
 
-  const handleGenerateRace1 = () => {
+  const handleConfigChange = (field: keyof RaceConfig, value: string) => {
+    setConfigDraft((prev) => {
+      if (field === 'firstRaceStartTime') {
+        return {
+          ...prev,
+          [field]: value
+        };
+      }
+
+      const numeric = Number(value);
+      return {
+        ...prev,
+        [field]: Number.isFinite(numeric) ? numeric : 0
+      };
+    });
+  };
+
+  const handleGenerateRaces = () => {
     if (!hasClassification) {
-      setFeedback('No hay clasificación conjunta disponible para generar parrilla.');
+      setFeedback('No hay clasificación conjunta disponible para generar parrillas.');
       return;
     }
 
-    const race1 = buildRaceGrid(standingsWithPosition, teamByPilotId, pilotsById, qualyTimeByPilot);
-    setStoredRaces((prev) => ({ ...prev, race1 }));
-    setFeedback('Parrilla Carrera 1 generada correctamente.');
-  };
-
-  const handleGenerateRace2 = () => {
-    if (!hasClassification) {
-      setFeedback('No hay clasificación conjunta disponible para generar parrilla.');
+    const validated = validateRaceConfig(configDraft, runtimeConfig?.raceCount ?? DEFAULT_CONFIG.raceCount);
+    if (!validated.ok) {
+      setFeedback(validated.message);
       return;
     }
 
-    const race2 = buildRaceGrid(standingsWithPosition, teamByPilotId, pilotsById, qualyTimeByPilot);
-    setStoredRaces((prev) => ({ ...prev, race2 }));
-    setFeedback('Parrilla Carrera 2 generada correctamente.');
+    const races = buildRaceGrids(
+      standingsWithPosition,
+      teamByPilotId,
+      pilotsById,
+      qualyTimeByPilot,
+      validated.config
+    );
+
+    setStored({
+      config: validated.config,
+      races,
+      race1: toLegacyRaceGrid(races[0] ?? null),
+      race2: toLegacyRaceGrid(races[1] ?? null)
+    });
+    setConfigDraft(validated.config);
+    setFeedback('Parrillas generadas con la configuración actual.');
   };
 
-  const handleUndoRaces = () => {
-    setStoredRaces({ race1: null, race2: null });
+  const handleResetRaces = () => {
+    const validated = validateRaceConfig(configDraft, runtimeConfig?.raceCount ?? DEFAULT_CONFIG.raceCount);
+    setStored({
+      config: validated.ok ? validated.config : buildDefaultRaceConfig(runtimeConfig, pilots.length),
+      races: [],
+      race1: null,
+      race2: null
+    });
     setFeedback('Parrillas eliminadas. Estado reseteado.');
+  };
+
+  const handleRaceTimeChange = (raceId: string, startTime: string) => {
+    if (!isValidTimeString(startTime)) {
+      setFeedback('Hora inválida. Usa formato HH:mm.');
+      return;
+    }
+
+    setStored((prev) => {
+      const nextRaces = prev.races.map((race) => (race.id === raceId ? { ...race, startTime } : race));
+      return {
+        ...prev,
+        races: nextRaces,
+        race1: toLegacyRaceGrid(nextRaces[0] ?? null),
+        race2: toLegacyRaceGrid(nextRaces[1] ?? null)
+      };
+    });
+    setFeedback('Hora de carrera actualizada.');
+  };
+
+  const handlePilotStartPositionChange = (
+    raceId: string,
+    groupId: string,
+    category: '390cc' | '270cc',
+    pilotId: string,
+    value: string
+  ) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return;
+    }
+
+    setStored((prev) => {
+      const nextRaces = prev.races.map((race) => {
+        if (race.id !== raceId) {
+          return race;
+        }
+
+        return {
+          ...race,
+          groups: race.groups.map((group) => {
+            if (group.id !== groupId) {
+              return group;
+            }
+
+            const nextCategoryPilots = (category === '390cc' ? group.category390 : group.category270).map((pilot) =>
+              pilot.pilotId === pilotId
+                ? {
+                    ...pilot,
+                    startPosition: Math.floor(parsed)
+                  }
+                : pilot
+            );
+
+            return category === '390cc'
+              ? { ...group, category390: nextCategoryPilots }
+              : { ...group, category270: nextCategoryPilots };
+          })
+        };
+      });
+
+      return {
+        ...prev,
+        races: nextRaces,
+        race1: toLegacyRaceGrid(nextRaces[0] ?? null),
+        race2: toLegacyRaceGrid(nextRaces[1] ?? null)
+      };
+    });
   };
 
   return (
@@ -192,7 +333,7 @@ export default function RacesPage() {
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <p className="text-xs uppercase tracking-[0.16em] text-gp-textSoft">MÓDULO OPERATIVO</p>
-                      <h1 className="mt-2 text-3xl font-semibold uppercase tracking-[0.14em] text-white">PARRILLAS DE CARRERA</h1>
+                      <h1 className="mt-2 text-3xl font-semibold uppercase tracking-[0.14em] text-white">PARRILLAS DE CARRERA CONFIGURABLES</h1>
                     </div>
 
                     <Link
@@ -204,29 +345,52 @@ export default function RacesPage() {
                     </Link>
                   </div>
 
+                  <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-5">
+                    <LabeledNumber
+                      label="Cantidad carreras"
+                      value={String(configDraft.raceCount)}
+                      onChange={(value) => handleConfigChange('raceCount', value)}
+                      min={1}
+                    />
+                    <LabeledNumber
+                      label="Grupos por carrera"
+                      value={String(configDraft.groupsPerRace)}
+                      onChange={(value) => handleConfigChange('groupsPerRace', value)}
+                      min={1}
+                    />
+                    <LabeledNumber
+                      label="Pilotos por grupo"
+                      value={String(configDraft.pilotsPerGroup)}
+                      onChange={(value) => handleConfigChange('pilotsPerGroup', value)}
+                      min={1}
+                    />
+                    <LabeledTime
+                      label="Hora primera carrera"
+                      value={configDraft.firstRaceStartTime}
+                      onChange={(value) => handleConfigChange('firstRaceStartTime', value)}
+                    />
+                    <LabeledNumber
+                      label="Intervalo (min)"
+                      value={String(configDraft.raceIntervalMinutes)}
+                      onChange={(value) => handleConfigChange('raceIntervalMinutes', value)}
+                      min={1}
+                    />
+                  </div>
+
                   <div className="mt-4 flex flex-wrap items-center gap-2">
                     <button
                       type="button"
-                      onClick={handleGenerateRace1}
+                      onClick={handleGenerateRaces}
                       disabled={!isHydrated || !hasClassification}
                       className="rounded-xl border border-gp-racingRed/55 bg-gp-racingRed/[0.18] px-5 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-red-100 transition-all duration-200 hover:bg-gp-racingRed/[0.28] hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
                     >
-                      Generar Parrilla Carrera 1
+                      Generar Parrillas
                     </button>
 
                     <button
                       type="button"
-                      onClick={handleGenerateRace2}
-                      disabled={!isHydrated || !hasClassification}
-                      className="rounded-xl border border-gp-telemetryBlue/55 bg-gp-telemetryBlue/[0.18] px-5 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-cyan-100 transition-all duration-200 hover:bg-gp-telemetryBlue/[0.3] hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
-                    >
-                      Generar Parrilla Carrera 2
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleUndoRaces}
-                      disabled={!isHydrated || (!storedRaces.race1 && !storedRaces.race2)}
+                      onClick={handleResetRaces}
+                      disabled={!isHydrated || stored.races.length === 0}
                       className="rounded-xl border border-white/20 bg-white/[0.06] px-5 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-gp-textSoft transition-all duration-200 hover:border-gp-telemetryBlue/45 hover:bg-gp-telemetryBlue/[0.12] hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
                     >
                       Deshacer Parrillas
@@ -248,9 +412,22 @@ export default function RacesPage() {
                   <div className="mt-4 h-px w-full bg-gradient-to-r from-gp-racingRed/80 via-gp-telemetryBlue/55 to-transparent" />
                 </article>
 
-                <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-                  <RaceGridPanel title="Carrera 1" raceKey="race1" grid={storedRaces.race1} advantageCategory="270cc" />
-                  <RaceGridPanel title="Carrera 2" raceKey="race2" grid={storedRaces.race2} advantageCategory="390cc" />
+                <div className="space-y-5">
+                  {stored.races.length === 0 ? (
+                    <article className="rounded-2xl border border-white/10 bg-[rgba(17,24,38,0.72)] p-5 text-center text-xs uppercase tracking-[0.14em] text-gp-textSoft shadow-panel-deep backdrop-blur-xl">
+                      No hay parrillas generadas.
+                    </article>
+                  ) : (
+                    stored.races.map((race, index) => (
+                      <RaceGridPanel
+                        key={race.id}
+                        race={race}
+                        raceIndex={index}
+                        onRaceTimeChange={handleRaceTimeChange}
+                        onPilotStartPositionChange={handlePilotStartPositionChange}
+                      />
+                    ))
+                  )}
                 </div>
               </div>
             </section>
@@ -262,49 +439,81 @@ export default function RacesPage() {
 }
 
 function RaceGridPanel({
-  title,
-  raceKey,
-  grid,
-  advantageCategory
+  race,
+  raceIndex,
+  onRaceTimeChange,
+  onPilotStartPositionChange
 }: {
-  title: string;
-  raceKey: 'race1' | 'race2';
-  grid: RaceGrid | null;
-  advantageCategory: '390cc' | '270cc';
+  race: RaceGrid;
+  raceIndex: number;
+  onRaceTimeChange: (raceId: string, startTime: string) => void;
+  onPilotStartPositionChange: (
+    raceId: string,
+    groupId: string,
+    category: '390cc' | '270cc',
+    pilotId: string,
+    value: string
+  ) => void;
 }) {
+  const advantageCategory = raceIndex % 2 === 0 ? '270cc' : '390cc';
+
   return (
     <article className="rounded-2xl border border-white/10 bg-[rgba(17,24,38,0.72)] p-4 shadow-panel-deep backdrop-blur-xl">
-      <p className="text-xs uppercase tracking-[0.14em] text-gp-textSoft">{raceKey.toUpperCase()}</p>
-      <h2 className="mt-1 text-2xl font-semibold uppercase tracking-[0.13em] text-white">{title}</h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-xs uppercase tracking-[0.14em] text-gp-textSoft">{race.id.toUpperCase()}</p>
+          <h2 className="mt-1 text-2xl font-semibold uppercase tracking-[0.13em] text-white">{race.name}</h2>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <label className="text-[11px] uppercase tracking-[0.12em] text-gp-textSoft">Hora carrera</label>
+          <input
+            type="time"
+            value={race.startTime}
+            onChange={(event) => onRaceTimeChange(race.id, event.target.value)}
+            className="rounded-lg border border-white/20 bg-[rgba(17,24,38,0.75)] px-3 py-2 text-xs text-white outline-none transition-colors focus:border-gp-telemetryBlue/55"
+          />
+        </div>
+      </div>
+
       <div className="mt-3 h-px w-full bg-gradient-to-r from-gp-racingRed/70 via-gp-telemetryBlue/50 to-transparent" />
 
-      {!grid ? (
-        <div className="mt-4 rounded-lg border border-white/10 bg-white/[0.02] px-4 py-8 text-center text-xs uppercase tracking-[0.14em] text-gp-textSoft">
-          Parrilla no generada.
-        </div>
-      ) : (
-        <div className="mt-4 space-y-4">
-          <GroupSection title="Grupo 1" grid={grid.group1} advantageCategory={advantageCategory} />
-          <GroupSection title="Grupo 2" grid={grid.group2} advantageCategory={advantageCategory} />
-        </div>
-      )}
+      <div className="mt-4 space-y-4">
+        {race.groups.map((group) => (
+          <GroupSection
+            key={group.id}
+            raceId={race.id}
+            grid={group}
+            advantageCategory={advantageCategory}
+            onPilotStartPositionChange={onPilotStartPositionChange}
+          />
+        ))}
+      </div>
     </article>
   );
 }
 
 function GroupSection({
-  title,
+  raceId,
   grid,
-  advantageCategory
+  advantageCategory,
+  onPilotStartPositionChange
 }: {
-  title: string;
+  raceId: string;
   grid: RaceGroupGrid;
   advantageCategory: '390cc' | '270cc';
+  onPilotStartPositionChange: (
+    raceId: string,
+    groupId: string,
+    category: '390cc' | '270cc',
+    pilotId: string,
+    value: string
+  ) => void;
 }) {
   return (
     <section className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm font-semibold uppercase tracking-[0.12em] text-white">{title}</p>
+        <p className="text-sm font-semibold uppercase tracking-[0.12em] text-white">{grid.name}</p>
         <span className="text-[11px] uppercase tracking-[0.12em] text-gp-textSoft">
           {grid.category390.length + grid.category270.length} pilotos
         </span>
@@ -312,18 +521,20 @@ function GroupSection({
 
       <div className="space-y-3">
         <CategorySection
+          raceId={raceId}
+          groupId={grid.id}
           title="390cc"
           pilots={grid.category390}
           showAdvantage={advantageCategory === '390cc'}
-          startPosition={1}
-          step={2}
+          onPilotStartPositionChange={onPilotStartPositionChange}
         />
         <CategorySection
+          raceId={raceId}
+          groupId={grid.id}
           title="270cc"
           pilots={grid.category270}
           showAdvantage={advantageCategory === '270cc'}
-          startPosition={2}
-          step={2}
+          onPilotStartPositionChange={onPilotStartPositionChange}
         />
       </div>
     </section>
@@ -331,17 +542,25 @@ function GroupSection({
 }
 
 function CategorySection({
+  raceId,
+  groupId,
   title,
   pilots,
   showAdvantage,
-  startPosition,
-  step
+  onPilotStartPositionChange
 }: {
+  raceId: string;
+  groupId: string;
   title: '390cc' | '270cc';
   pilots: RacePilot[];
   showAdvantage: boolean;
-  startPosition: number;
-  step: number;
+  onPilotStartPositionChange: (
+    raceId: string,
+    groupId: string,
+    category: '390cc' | '270cc',
+    pilotId: string,
+    value: string
+  ) => void;
 }) {
   return (
     <section className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
@@ -368,13 +587,25 @@ function CategorySection({
             </tr>
           </thead>
           <tbody>
-            {pilots.map((pilot, index) => (
+            {pilots.map((pilot) => (
               <tr key={`${title}-${pilot.pilotId}`} className="border-t border-white/10 bg-white/[0.01]">
-                <td className="px-3 py-2.5 text-sm font-semibold text-white">P{startPosition + index * step}</td>
+                <td className="px-3 py-2.5 text-sm font-semibold text-white">
+                  <input
+                    type="number"
+                    min={1}
+                    value={pilot.startPosition}
+                    onChange={(event) =>
+                      onPilotStartPositionChange(raceId, groupId, title, pilot.pilotId, event.target.value)
+                    }
+                    className="w-20 rounded-md border border-white/20 bg-[rgba(17,24,38,0.75)] px-2 py-1 text-xs text-white outline-none transition-colors focus:border-gp-telemetryBlue/55"
+                  />
+                </td>
                 <td className="px-3 py-2.5 text-sm font-semibold text-cyan-200">#{String(pilot.numeroPiloto).padStart(2, '0')}</td>
                 <td className="px-3 py-2.5 text-sm font-medium uppercase tracking-[0.08em] text-white">
                   {pilot.fullName}
-                  <span className="ml-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-gp-textSoft">(Clasif. P{pilot.classificationPosition})</span>
+                  <span className="ml-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-gp-textSoft">
+                    (Clasif. P{pilot.classificationPosition})
+                  </span>
                 </td>
                 <td className="px-3 py-2.5 text-xs font-semibold uppercase tracking-[0.12em] text-gp-textSoft">{pilot.teamName}</td>
               </tr>
@@ -386,7 +617,54 @@ function CategorySection({
   );
 }
 
-function buildRaceGrid(
+function LabeledNumber({
+  label,
+  value,
+  onChange,
+  min
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  min: number;
+}) {
+  return (
+    <div className="space-y-1">
+      <label className="text-[11px] uppercase tracking-[0.12em] text-gp-textSoft">{label}</label>
+      <input
+        type="number"
+        min={min}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full rounded-lg border border-white/20 bg-[rgba(17,24,38,0.75)] px-3 py-2 text-sm text-white outline-none transition-colors focus:border-gp-telemetryBlue/55"
+      />
+    </div>
+  );
+}
+
+function LabeledTime({
+  label,
+  value,
+  onChange
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="space-y-1">
+      <label className="text-[11px] uppercase tracking-[0.12em] text-gp-textSoft">{label}</label>
+      <input
+        type="time"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full rounded-lg border border-white/20 bg-[rgba(17,24,38,0.75)] px-3 py-2 text-sm text-white outline-none transition-colors focus:border-gp-telemetryBlue/55"
+      />
+    </div>
+  );
+}
+
+function buildRaceGrids(
   standings: Array<{
     pilotId: string;
     numeroPiloto: number;
@@ -395,81 +673,104 @@ function buildRaceGrid(
   }>,
   teamByPilotId: Map<string, string>,
   pilotsById: Map<string, { kart: '390cc' | '270cc' }>,
-  qualyTimeByPilot: Map<string, number>
-): RaceGrid {
-  const total = standings.length;
-  const groupSize = Math.ceil(total / 2);
-  const group1 = standings.slice(0, groupSize);
-  const group2 = standings.slice(groupSize);
+  qualyTimeByPilot: Map<string, number>,
+  config: RaceConfig
+): RaceGrid[] {
+  const totalSlots = config.groupsPerRace * config.pilotsPerGroup;
+  const selected = standings.slice(0, totalSlots);
 
-  const mapPilot = (pilot: (typeof standings)[number]): RacePilot => ({
-    pilotId: pilot.pilotId,
-    numeroPiloto: pilot.numeroPiloto,
-    fullName: pilot.fullName,
-    teamName: teamByPilotId.get(pilot.pilotId) ?? 'Sin equipo',
-    classificationPosition: pilot.position
-  });
+  return Array.from({ length: config.raceCount }, (_, raceIndex) => {
+    const raceStartTime = buildClockTime(config.firstRaceStartTime, raceIndex * config.raceIntervalMinutes);
 
-  const buildGroupGrid = (group: typeof standings): RaceGroupGrid => {
-    const sortByQualy = (pilots: typeof group) =>
-      [...pilots].sort((a, b) => {
-        const timeA = qualyTimeByPilot.get(a.pilotId) ?? Number.POSITIVE_INFINITY;
-        const timeB = qualyTimeByPilot.get(b.pilotId) ?? Number.POSITIVE_INFINITY;
-        const diff = timeA - timeB;
-        if (diff !== 0) {
-          return diff;
-        }
-        return a.position - b.position;
+    const groups = Array.from({ length: config.groupsPerRace }, (_, groupIndex) => {
+      const start = groupIndex * config.pilotsPerGroup;
+      const groupStandings = selected.slice(start, start + config.pilotsPerGroup);
+
+      const mapPilot = (pilot: (typeof groupStandings)[number], startPosition: number): RacePilot => ({
+        pilotId: pilot.pilotId,
+        numeroPiloto: pilot.numeroPiloto,
+        fullName: pilot.fullName,
+        teamName: teamByPilotId.get(pilot.pilotId) ?? 'Sin equipo',
+        classificationPosition: pilot.position,
+        startPosition
       });
 
-    const category390 = sortByQualy(group.filter((pilot) => pilotsById.get(pilot.pilotId)?.kart === '390cc')).map(mapPilot);
-    const category270 = sortByQualy(group.filter((pilot) => pilotsById.get(pilot.pilotId)?.kart === '270cc')).map(mapPilot);
+      const sortByQualy = (pilots: typeof groupStandings) =>
+        [...pilots].sort((a, b) => {
+          const timeA = qualyTimeByPilot.get(a.pilotId) ?? Number.POSITIVE_INFINITY;
+          const timeB = qualyTimeByPilot.get(b.pilotId) ?? Number.POSITIVE_INFINITY;
+          const diff = timeA - timeB;
+          if (diff !== 0) {
+            return diff;
+          }
+          return a.position - b.position;
+        });
+
+      const category390Source = sortByQualy(groupStandings.filter((pilot) => pilotsById.get(pilot.pilotId)?.kart === '390cc'));
+      const category270Source = sortByQualy(groupStandings.filter((pilot) => pilotsById.get(pilot.pilotId)?.kart === '270cc'));
+
+      const category390 = category390Source.map((pilot, index) => mapPilot(pilot, 1 + index * 2));
+      const category270 = category270Source.map((pilot, index) => mapPilot(pilot, 2 + index * 2));
+
+      return {
+        id: `race-${raceIndex + 1}-group-${groupIndex + 1}`,
+        name: `Grupo ${groupIndex + 1}`,
+        category390,
+        category270
+      };
+    });
 
     return {
-      category390,
-      category270
+      id: `race${raceIndex + 1}`,
+      name: `Carrera ${raceIndex + 1}`,
+      startTime: raceStartTime,
+      groups
     };
-  };
+  });
+}
+
+function toLegacyRaceGrid(race: RaceGrid | null): LegacyRaceGrid | null {
+  if (!race) {
+    return null;
+  }
+
+  const group1 = race.groups[0] ?? { id: 'g1', name: 'Grupo 1', category390: [], category270: [] };
+  const group2 = race.groups[1] ?? { id: 'g2', name: 'Grupo 2', category390: [], category270: [] };
 
   return {
-    group1: buildGroupGrid(group1),
-    group2: buildGroupGrid(group2)
+    group1: {
+      category390: group1.category390.map(stripStartPosition),
+      category270: group1.category270.map(stripStartPosition)
+    },
+    group2: {
+      category390: group2.category390.map(stripStartPosition),
+      category270: group2.category270.map(stripStartPosition)
+    }
   };
 }
 
-function isRaceGrid(value: unknown): value is RaceGrid {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-
-  const candidate = value as RaceGrid;
-  return isRaceGroupGrid(candidate.group1) && isRaceGroupGrid(candidate.group2);
-}
-
-function isRaceGroupGrid(value: unknown): value is RaceGroupGrid {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-
-  const candidate = value as RaceGroupGrid;
-  return Array.isArray(candidate.category390) && Array.isArray(candidate.category270);
+function stripStartPosition(pilot: RacePilot): Omit<RacePilot, 'startPosition'> {
+  const { startPosition: _ignored, ...rest } = pilot;
+  return rest;
 }
 
 function syncStoredRacesWithTeams(stored: StoredRaces, teamByPilotId: Map<string, string>): StoredRaces {
-  const race1 = stored.race1 ? syncRaceGridTeamNames(stored.race1, teamByPilotId) : null;
-  const race2 = stored.race2 ? syncRaceGridTeamNames(stored.race2, teamByPilotId) : null;
+  const nextRaces = stored.races.map((race) => syncRaceGridTeamNames(race, teamByPilotId));
 
-  if (race1 === stored.race1 && race2 === stored.race2) {
+  const changed = nextRaces.some((race, index) => race !== stored.races[index]);
+  if (!changed) {
     return stored;
   }
 
   return {
-    race1,
-    race2
+    ...stored,
+    races: nextRaces,
+    race1: toLegacyRaceGrid(nextRaces[0] ?? null),
+    race2: toLegacyRaceGrid(nextRaces[1] ?? null)
   };
 }
 
-function syncRaceGridTeamNames(grid: RaceGrid, teamByPilotId: Map<string, string>): RaceGrid {
+function syncRaceGridTeamNames(race: RaceGrid, teamByPilotId: Map<string, string>): RaceGrid {
   let changed = false;
 
   const updatePilot = (pilot: RacePilot): RacePilot => {
@@ -485,21 +786,198 @@ function syncRaceGridTeamNames(grid: RaceGrid, teamByPilotId: Map<string, string
     };
   };
 
-  const nextGroup1: RaceGroupGrid = {
-    category390: grid.group1.category390.map(updatePilot),
-    category270: grid.group1.category270.map(updatePilot)
-  };
-  const nextGroup2: RaceGroupGrid = {
-    category390: grid.group2.category390.map(updatePilot),
-    category270: grid.group2.category270.map(updatePilot)
-  };
+  const nextGroups = race.groups.map((group) => ({
+    ...group,
+    category390: group.category390.map(updatePilot),
+    category270: group.category270.map(updatePilot)
+  }));
 
   if (!changed) {
-    return grid;
+    return race;
   }
 
   return {
-    group1: nextGroup1,
-    group2: nextGroup2
+    ...race,
+    groups: nextGroups
   };
+}
+
+function normalizeStoredRaces(value: unknown, fallbackConfig: RaceConfig): StoredRaces {
+  if (!value || typeof value !== 'object') {
+    return {
+      config: fallbackConfig,
+      races: [],
+      race1: null,
+      race2: null
+    };
+  }
+
+  const candidate = value as Partial<StoredRaces>;
+  const config = parseRaceConfig(candidate.config, fallbackConfig);
+
+  const races = Array.isArray(candidate.races)
+    ? candidate.races.filter(isDynamicRaceGrid)
+    : [];
+
+  if (races.length > 0) {
+    return {
+      config,
+      races,
+      race1: toLegacyRaceGrid(races[0] ?? null),
+      race2: toLegacyRaceGrid(races[1] ?? null)
+    };
+  }
+
+  const race1 = isLegacyRaceGrid(candidate.race1) ? candidate.race1 : null;
+  const race2 = isLegacyRaceGrid(candidate.race2) ? candidate.race2 : null;
+
+  const migrated = [
+    race1 ? legacyToDynamicRace('race1', 'Carrera 1', config.firstRaceStartTime, race1) : null,
+    race2 ? legacyToDynamicRace('race2', 'Carrera 2', buildClockTime(config.firstRaceStartTime, config.raceIntervalMinutes), race2) : null
+  ].filter((item): item is RaceGrid => Boolean(item));
+
+  return {
+    config,
+    races: migrated,
+    race1,
+    race2
+  };
+}
+
+function legacyToDynamicRace(id: string, name: string, startTime: string, legacy: LegacyRaceGrid): RaceGrid {
+  return {
+    id,
+    name,
+    startTime,
+    groups: [
+      {
+        id: `${id}-group-1`,
+        name: 'Grupo 1',
+        category390: legacy.group1.category390.map((pilot, index) => ({ ...pilot, startPosition: 1 + index * 2 })),
+        category270: legacy.group1.category270.map((pilot, index) => ({ ...pilot, startPosition: 2 + index * 2 }))
+      },
+      {
+        id: `${id}-group-2`,
+        name: 'Grupo 2',
+        category390: legacy.group2.category390.map((pilot, index) => ({ ...pilot, startPosition: 1 + index * 2 })),
+        category270: legacy.group2.category270.map((pilot, index) => ({ ...pilot, startPosition: 2 + index * 2 }))
+      }
+    ]
+  };
+}
+
+function buildDefaultRaceConfig(
+  runtimeConfig: { raceCount: number; maxPilots: number } | null,
+  pilotsCount: number
+): RaceConfig {
+  const raceCount = sanitizePositive(runtimeConfig?.raceCount, DEFAULT_CONFIG.raceCount);
+  const groupsPerRace = DEFAULT_CONFIG.groupsPerRace;
+  const participants = sanitizePositive(runtimeConfig?.maxPilots, pilotsCount || DEFAULT_CONFIG.pilotsPerGroup * groupsPerRace);
+  const pilotsPerGroup = Math.max(1, Math.ceil(participants / groupsPerRace));
+
+  return {
+    ...DEFAULT_CONFIG,
+    raceCount,
+    groupsPerRace,
+    pilotsPerGroup
+  };
+}
+
+function validateRaceConfig(
+  draft: RaceConfig,
+  fallbackRaceCount: number
+): { ok: true; config: RaceConfig } | { ok: false; message: string } {
+  const raceCount = sanitizePositive(draft.raceCount, fallbackRaceCount);
+  const groupsPerRace = sanitizePositive(draft.groupsPerRace, DEFAULT_CONFIG.groupsPerRace);
+  const pilotsPerGroup = sanitizePositive(draft.pilotsPerGroup, DEFAULT_CONFIG.pilotsPerGroup);
+  const raceIntervalMinutes = sanitizePositive(draft.raceIntervalMinutes, DEFAULT_CONFIG.raceIntervalMinutes);
+
+  if (!isValidTimeString(draft.firstRaceStartTime)) {
+    return { ok: false, message: 'Hora de primera carrera inválida. Usa formato HH:mm.' };
+  }
+
+  return {
+    ok: true,
+    config: {
+      raceCount,
+      groupsPerRace,
+      pilotsPerGroup,
+      firstRaceStartTime: draft.firstRaceStartTime,
+      raceIntervalMinutes
+    }
+  };
+}
+
+function parseRaceConfig(value: unknown, fallback: RaceConfig): RaceConfig {
+  if (!value || typeof value !== 'object') {
+    return fallback;
+  }
+
+  const candidate = value as Partial<RaceConfig>;
+
+  return {
+    raceCount: sanitizePositive(candidate.raceCount, fallback.raceCount),
+    groupsPerRace: sanitizePositive(candidate.groupsPerRace, fallback.groupsPerRace),
+    pilotsPerGroup: sanitizePositive(candidate.pilotsPerGroup, fallback.pilotsPerGroup),
+    firstRaceStartTime: isValidTimeString(candidate.firstRaceStartTime) ? candidate.firstRaceStartTime : fallback.firstRaceStartTime,
+    raceIntervalMinutes: sanitizePositive(candidate.raceIntervalMinutes, fallback.raceIntervalMinutes)
+  };
+}
+
+function isDynamicRaceGrid(value: unknown): value is RaceGrid {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const candidate = value as RaceGrid;
+  return (
+    typeof candidate.id === 'string' &&
+    typeof candidate.name === 'string' &&
+    typeof candidate.startTime === 'string' &&
+    Array.isArray(candidate.groups)
+  );
+}
+
+function isLegacyRaceGrid(value: unknown): value is LegacyRaceGrid {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const candidate = value as LegacyRaceGrid;
+  return isLegacyRaceGroupGrid(candidate.group1) && isLegacyRaceGroupGrid(candidate.group2);
+}
+
+function isLegacyRaceGroupGrid(value: unknown): value is LegacyRaceGroupGrid {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const candidate = value as LegacyRaceGroupGrid;
+  return Array.isArray(candidate.category390) && Array.isArray(candidate.category270);
+}
+
+function sanitizePositive(value: number | undefined, fallback: number) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return fallback;
+  }
+
+  return Math.floor(value);
+}
+
+function isValidTimeString(value: unknown): value is string {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  return /^([01]\d|2[0-3]):([0-5]\d)$/.test(value);
+}
+
+function buildClockTime(base: string, plusMinutes: number) {
+  const [hourPart, minutePart] = base.split(':');
+  const hour = Number(hourPart);
+  const minute = Number(minutePart);
+  const total = (Number.isFinite(hour) && Number.isFinite(minute) ? hour * 60 + minute : 0) + plusMinutes;
+  const endHour = Math.floor(total / 60) % 24;
+  const endMinute = total % 60;
+  return `${String(endHour).padStart(2, '0')}:${String(endMinute).padStart(2, '0')}`;
 }
