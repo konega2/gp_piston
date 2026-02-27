@@ -19,6 +19,8 @@ type TeamRecord = {
   members: string[];
 };
 
+type AutoAssignStrategy = 'normativa' | 'levels' | 'times' | 'karts';
+
 export default function TeamsPage() {
   const { activeEventId, isHydrated: activeEventHydrated } = useActiveEvent();
   const runtimeConfig = useEventRuntimeConfig(activeEventId);
@@ -31,6 +33,8 @@ export default function TeamsPage() {
   const [feedback, setFeedback] = useState('');
   const [isAssignOpen, setIsAssignOpen] = useState(false);
   const [assignMode, setAssignMode] = useState<'auto' | 'manual'>('auto');
+  const [autoAssignStrategy, setAutoAssignStrategy] = useState<AutoAssignStrategy>('normativa');
+  const [teamsCountDraft, setTeamsCountDraft] = useState('2');
   const [draftTeams, setDraftTeams] = useState<TeamRecord[]>([]);
   const [draggedPilotId, setDraggedPilotId] = useState<string | null>(null);
 
@@ -100,9 +104,19 @@ export default function TeamsPage() {
     void saveModuleState(activeEventId, 'teams', teams);
   }, [isTeamsHydrated, teams, activeEventId]);
 
-  const handleGenerateTeamsAuto = () => {
-    setTeams(buildTeamsByPattern(orderedPilots, configuredTeamsCount));
-    setFeedback('Equipos generados correctamente con los pilotos disponibles.');
+  const handleGenerateTeamsAuto = (requestedTeamsCount: number, strategy: AutoAssignStrategy) => {
+    const safeTeamsCount = sanitizeTeamsCount(requestedTeamsCount, pilots.length);
+    const generated =
+      strategy === 'normativa'
+        ? buildTeamsByNormativa(orderedPilots, safeTeamsCount)
+        : strategy === 'levels'
+          ? buildTeamsByLevels(pilots, safeTeamsCount)
+          : strategy === 'karts'
+            ? buildTeamsByKarts(pilots, safeTeamsCount)
+            : buildTeamsByTimes(orderedPilots, safeTeamsCount);
+
+    setTeams(generated);
+    setFeedback(`Equipos generados (${safeTeamsCount}) con criterio ${labelForStrategy(strategy)}.`);
   };
 
   const handleUndoTeams = () => {
@@ -110,8 +124,11 @@ export default function TeamsPage() {
     setFeedback('Equipos eliminados. Estado reseteado.');
   };
 
-  const resetDraftTeams = () => {
-    setDraftTeams(createTeamPlaceholders(configuredTeamsCount));
+  const resetDraftTeams = (requestedTeamsCount?: number) => {
+    const baseCount =
+      (requestedTeamsCount ?? teams.length) || configuredTeamsCount || Math.max(1, Math.ceil(pilots.length / 4));
+
+    setDraftTeams(createTeamPlaceholders(sanitizeTeamsCount(baseCount, pilots.length)));
   };
 
   const movePilotToTeam = (pilotId: string, teamId: string | null) => {
@@ -135,11 +152,14 @@ export default function TeamsPage() {
   }, [draftTeams, pilots]);
 
   const handleApplyAssignments = () => {
+    const parsedTeamsCount = sanitizeTeamsCount(Number(teamsCountDraft), pilots.length);
+
     if (assignMode === 'auto') {
-      handleGenerateTeamsAuto();
+      handleGenerateTeamsAuto(parsedTeamsCount, autoAssignStrategy);
     } else {
-      setTeams(draftTeams);
-      setFeedback('Equipos actualizados manualmente.');
+      const normalizedManual = resizeTeamsKeepingMembers(draftTeams, parsedTeamsCount);
+      setTeams(normalizedManual);
+      setFeedback(`Equipos actualizados manualmente (${parsedTeamsCount}).`);
     }
 
     setIsAssignOpen(false);
@@ -147,9 +167,26 @@ export default function TeamsPage() {
 
   const handleOpenAssign = () => {
     setAssignMode('auto');
-    resetDraftTeams();
+    const initialCount = teams.length || configuredTeamsCount || Math.max(1, Math.ceil(pilots.length / 4));
+    const safeInitialCount = sanitizeTeamsCount(initialCount, pilots.length);
+    setTeamsCountDraft(String(safeInitialCount));
+    setAutoAssignStrategy('normativa');
+    resetDraftTeams(safeInitialCount);
     setDraggedPilotId(null);
     setIsAssignOpen(true);
+  };
+
+  const handleTeamsCountChange = (value: string) => {
+    setTeamsCountDraft(value);
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return;
+    }
+
+    const safeCount = sanitizeTeamsCount(parsed, pilots.length);
+    if (assignMode === 'manual') {
+      setDraftTeams((prev) => resizeTeamsKeepingMembers(prev, safeCount));
+    }
   };
 
   return (
@@ -292,7 +329,7 @@ export default function TeamsPage() {
               <div>
                 <p className="text-xs uppercase tracking-[0.18em] text-gp-textSoft">Generador de equipos</p>
                 <h2 className="mt-2 text-2xl font-semibold uppercase tracking-[0.14em] text-white">Selecciona modo</h2>
-                <p className="mt-2 text-sm text-gp-textSoft">Elige generar automaticamente o asignar manualmente.</p>
+                <p className="mt-2 text-sm text-gp-textSoft">Configura cantidad de equipos y el criterio de asignación.</p>
               </div>
               <button
                 type="button"
@@ -305,8 +342,37 @@ export default function TeamsPage() {
 
             <div className="space-y-5 px-6 py-5">
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <label className="rounded-xl border border-white/10 bg-[rgba(17,24,38,0.65)] p-3">
+                  <p className="text-[11px] uppercase tracking-[0.13em] text-gp-textSoft">Cantidad de equipos</p>
+                  <input
+                    type="number"
+                    min={1}
+                    max={Math.max(pilots.length, 1)}
+                    value={teamsCountDraft}
+                    onChange={(event) => handleTeamsCountChange(event.target.value)}
+                    className="mt-2 w-full rounded-lg border border-white/10 bg-[rgba(10,15,22,0.7)] px-3 py-2 text-sm font-semibold uppercase tracking-[0.08em] text-white outline-none transition-colors focus:border-gp-telemetryBlue/55"
+                  />
+                </label>
+
+                <div className="rounded-xl border border-white/10 bg-[rgba(17,24,38,0.65)] p-3">
+                  <p className="text-[11px] uppercase tracking-[0.13em] text-gp-textSoft">Criterio automático</p>
+                  <select
+                    value={autoAssignStrategy}
+                    onChange={(event) => setAutoAssignStrategy(event.target.value as AutoAssignStrategy)}
+                    className="mt-2 w-full rounded-lg border border-white/10 bg-[rgba(10,15,22,0.7)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-gp-textSoft outline-none transition-colors focus:border-gp-telemetryBlue/55"
+                    disabled={assignMode !== 'auto'}
+                  >
+                    <option value="normativa">Normativa (extremos por grupos)</option>
+                    <option value="levels">Niveles</option>
+                    <option value="times">Tiempos / clasificación</option>
+                    <option value="karts">Kart (270/390)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 {[
-                  { key: 'auto', title: 'Automatico', desc: 'Distribucion balanceada con todos los pilotos.' },
+                  { key: 'auto', title: 'Automatico', desc: 'Genera equipos según el criterio seleccionado.' },
                   { key: 'manual', title: 'Manual', desc: 'Asigna pilotos por drag & drop o selector.' }
                 ].map((option) => (
                   <button
@@ -474,8 +540,8 @@ function createTeamPlaceholders(count: number): TeamRecord[] {
   }));
 }
 
-function buildTeamsByPattern(orderedPilots: PilotRecord[], teamsCount: number): TeamRecord[] {
-  const safeTeamsCount = Math.max(teamsCount, 1);
+function buildTeamsByNormativa(orderedPilots: PilotRecord[], teamsCount: number): TeamRecord[] {
+  const safeTeamsCount = sanitizeTeamsCount(teamsCount, orderedPilots.length);
   const teams: TeamRecord[] = createTeamPlaceholders(safeTeamsCount).map((team): TeamRecord => ({
     ...team,
     members: []
@@ -487,25 +553,25 @@ function buildTeamsByPattern(orderedPilots: PilotRecord[], teamsCount: number): 
   const group2 = orderedPilots.slice(groupSize);
   const group1Size = group1.length;
   const group2Size = group2.length;
-  const patternTeams = Math.min(safeTeamsCount, Math.floor(groupSize / 4));
+  const patternTeams = Math.min(safeTeamsCount, Math.max(Math.floor(groupSize / 2), 1));
 
   for (let index = 0; index < patternTeams; index += 1) {
-    const frontStart = 1 + index * 2;
-    const backStart1 = group1Size - index * 2;
-    const backStart2 = group2Size - index * 2;
+    const frontStart = index * 2;
+    const backStart1 = group1Size - 1 - index * 2;
+    const backStart2 = group2Size - 1 - index * 2;
     const positionsGroup1 = [frontStart, frontStart + 1, backStart1 - 1, backStart1];
     const positionsGroup2 = [frontStart, frontStart + 1, backStart2 - 1, backStart2];
     const team = teams[index];
 
     positionsGroup1.forEach((position) => {
-      const pilot = group1[position - 1];
+      const pilot = group1[position];
       if (pilot && !team.members.includes(pilot.id)) {
         team.members.push(pilot.id);
       }
     });
 
     positionsGroup2.forEach((position) => {
-      const pilot = group2[position - 1];
+      const pilot = group2[position];
       if (pilot && !team.members.includes(pilot.id)) {
         team.members.push(pilot.id);
       }
@@ -523,4 +589,124 @@ function buildTeamsByPattern(orderedPilots: PilotRecord[], teamsCount: number): 
   });
 
   return teams;
+}
+
+function buildTeamsByTimes(orderedPilots: PilotRecord[], teamsCount: number): TeamRecord[] {
+  return buildTeamsBySnakeDraft(orderedPilots, teamsCount);
+}
+
+function buildTeamsByLevels(pilots: PilotRecord[], teamsCount: number): TeamRecord[] {
+  const byLevel = [...pilots].sort((a, b) => {
+    const priority: Record<PilotRecord['nivel'], number> = {
+      PRO: 0,
+      AMATEUR: 1,
+      PRINCIPIANTE: 2
+    };
+
+    const diff = priority[a.nivel] - priority[b.nivel];
+    if (diff !== 0) {
+      return diff;
+    }
+
+    return a.numeroPiloto - b.numeroPiloto;
+  });
+
+  return buildTeamsBySnakeDraft(byLevel, teamsCount);
+}
+
+function buildTeamsByKarts(pilots: PilotRecord[], teamsCount: number): TeamRecord[] {
+  const k390 = pilots
+    .filter((pilot) => pilot.kart === '390cc')
+    .sort((a, b) => a.numeroPiloto - b.numeroPiloto);
+  const k270 = pilots
+    .filter((pilot) => pilot.kart === '270cc')
+    .sort((a, b) => a.numeroPiloto - b.numeroPiloto);
+
+  return buildTeamsBySnakeDraft(interleaveLists(k390, k270), teamsCount);
+}
+
+function buildTeamsBySnakeDraft(orderedPilots: PilotRecord[], teamsCount: number): TeamRecord[] {
+  const safeTeamsCount = sanitizeTeamsCount(teamsCount, orderedPilots.length);
+  const teams = createTeamPlaceholders(safeTeamsCount);
+  if (teams.length === 0) {
+    return [];
+  }
+
+  let cursor = 0;
+  let direction: 1 | -1 = 1;
+
+  orderedPilots.forEach((pilot) => {
+    const team = teams[cursor];
+    if (team && !team.members.includes(pilot.id)) {
+      team.members.push(pilot.id);
+    }
+
+    if (direction === 1 && cursor === teams.length - 1) {
+      direction = -1;
+    } else if (direction === -1 && cursor === 0) {
+      direction = 1;
+    } else {
+      cursor += direction;
+    }
+  });
+
+  return teams;
+}
+
+function interleaveLists(first: PilotRecord[], second: PilotRecord[]) {
+  const merged: PilotRecord[] = [];
+  const max = Math.max(first.length, second.length);
+
+  for (let index = 0; index < max; index += 1) {
+    const itemFirst = first[index];
+    const itemSecond = second[index];
+    if (itemFirst) {
+      merged.push(itemFirst);
+    }
+    if (itemSecond) {
+      merged.push(itemSecond);
+    }
+  }
+
+  return merged;
+}
+
+function resizeTeamsKeepingMembers(existingTeams: TeamRecord[], teamsCount: number): TeamRecord[] {
+  const safeTeamsCount = sanitizeTeamsCount(teamsCount, existingTeams.reduce((acc, team) => acc + team.members.length, 0));
+  const placeholders = createTeamPlaceholders(safeTeamsCount);
+  const flattenedMembers = existingTeams.flatMap((team) => team.members);
+
+  flattenedMembers.forEach((pilotId, index) => {
+    const team = placeholders[index % placeholders.length];
+    if (team && !team.members.includes(pilotId)) {
+      team.members.push(pilotId);
+    }
+  });
+
+  return placeholders;
+}
+
+function sanitizeTeamsCount(value: number, pilotsCount: number) {
+  const max = Math.max(pilotsCount, 1);
+  if (!Number.isFinite(value) || value <= 0) {
+    return Math.min(2, max);
+  }
+
+  return Math.min(Math.floor(value), max);
+}
+
+function labelForStrategy(strategy: AutoAssignStrategy) {
+  if (strategy === 'normativa') {
+    return 'normativa';
+  }
+
+  if (strategy === 'levels') {
+    return 'niveles';
+  }
+
+  if (strategy === 'karts') {
+    return 'karts';
+  }
+
+  return 'tiempos';
 }
