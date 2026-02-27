@@ -51,6 +51,8 @@ type RaceConfig = {
   pilotsPerGroup: number;
   firstRaceStartTime: string;
   raceIntervalMinutes: number;
+  splitMode: 'classification' | 'random' | 'level' | 'team' | 'kart';
+  parity390: 'odd' | 'even';
 };
 
 type StoredRaces = {
@@ -71,7 +73,9 @@ const DEFAULT_CONFIG: RaceConfig = {
   groupsPerRace: 2,
   pilotsPerGroup: 8,
   firstRaceStartTime: '12:30',
-  raceIntervalMinutes: 20
+  raceIntervalMinutes: 20,
+  splitMode: 'classification',
+  parity390: 'odd'
 };
 
 export default function RacesPage() {
@@ -89,6 +93,7 @@ export default function RacesPage() {
     race2: null
   }));
   const [configDraft, setConfigDraft] = useState<RaceConfig>(DEFAULT_CONFIG);
+  const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
   const [feedback, setFeedback] = useState('');
 
@@ -191,10 +196,10 @@ export default function RacesPage() {
 
   const handleConfigChange = (field: keyof RaceConfig, value: string) => {
     setConfigDraft((prev) => {
-      if (field === 'firstRaceStartTime') {
+      if (field === 'firstRaceStartTime' || field === 'splitMode' || field === 'parity390') {
         return {
           ...prev,
-          [field]: value
+          [field]: value as RaceConfig[keyof RaceConfig]
         };
       }
 
@@ -234,6 +239,7 @@ export default function RacesPage() {
     });
     setConfigDraft(validated.config);
     setFeedback('Parrillas generadas con la configuración actual.');
+    setIsConfigOpen(false);
   };
 
   const handleResetRaces = () => {
@@ -345,46 +351,17 @@ export default function RacesPage() {
                     </Link>
                   </div>
 
-                  <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-5">
-                    <LabeledNumber
-                      label="Cantidad carreras"
-                      value={String(configDraft.raceCount)}
-                      onChange={(value) => handleConfigChange('raceCount', value)}
-                      min={1}
-                    />
-                    <LabeledNumber
-                      label="Grupos por carrera"
-                      value={String(configDraft.groupsPerRace)}
-                      onChange={(value) => handleConfigChange('groupsPerRace', value)}
-                      min={1}
-                    />
-                    <LabeledNumber
-                      label="Pilotos por grupo"
-                      value={String(configDraft.pilotsPerGroup)}
-                      onChange={(value) => handleConfigChange('pilotsPerGroup', value)}
-                      min={1}
-                    />
-                    <LabeledTime
-                      label="Hora primera carrera"
-                      value={configDraft.firstRaceStartTime}
-                      onChange={(value) => handleConfigChange('firstRaceStartTime', value)}
-                    />
-                    <LabeledNumber
-                      label="Intervalo (min)"
-                      value={String(configDraft.raceIntervalMinutes)}
-                      onChange={(value) => handleConfigChange('raceIntervalMinutes', value)}
-                      min={1}
-                    />
-                  </div>
-
                   <div className="mt-4 flex flex-wrap items-center gap-2">
                     <button
                       type="button"
-                      onClick={handleGenerateRaces}
+                      onClick={() => {
+                        setConfigDraft(stored.config);
+                        setIsConfigOpen(true);
+                      }}
                       disabled={!isHydrated || !hasClassification}
                       className="rounded-xl border border-gp-racingRed/55 bg-gp-racingRed/[0.18] px-5 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-red-100 transition-all duration-200 hover:bg-gp-racingRed/[0.28] hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
                     >
-                      Generar Parrillas
+                      Configurar y generar parrillas
                     </button>
 
                     <button
@@ -411,6 +388,87 @@ export default function RacesPage() {
 
                   <div className="mt-4 h-px w-full bg-gradient-to-r from-gp-racingRed/80 via-gp-telemetryBlue/55 to-transparent" />
                 </article>
+
+                {isConfigOpen ? (
+                  <article className="rounded-2xl border border-gp-racingRed/45 bg-[rgba(34,18,22,0.78)] p-5 shadow-panel-deep backdrop-blur-xl">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.16em] text-gp-textSoft">Formulario de generación</p>
+                        <h2 className="mt-1 text-2xl font-semibold uppercase tracking-[0.14em] text-white">Configurar parrillas</h2>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsConfigOpen(false)}
+                        className="rounded-lg border border-white/20 bg-white/[0.05] px-3 py-2 text-xs font-semibold uppercase tracking-[0.13em] text-gp-textSoft transition-colors hover:border-white/35 hover:text-white"
+                      >
+                        Cerrar
+                      </button>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+                      <LabeledNumber
+                        label="Cantidad carreras"
+                        value={String(configDraft.raceCount)}
+                        onChange={(value) => handleConfigChange('raceCount', value)}
+                        min={1}
+                      />
+                      <LabeledNumber
+                        label="Grupos por carrera"
+                        value={String(configDraft.groupsPerRace)}
+                        onChange={(value) => handleConfigChange('groupsPerRace', value)}
+                        min={1}
+                      />
+                      <LabeledNumber
+                        label="Pilotos por grupo"
+                        value={String(configDraft.pilotsPerGroup)}
+                        onChange={(value) => handleConfigChange('pilotsPerGroup', value)}
+                        min={1}
+                      />
+                      <LabeledTime
+                        label="Hora primera carrera"
+                        value={configDraft.firstRaceStartTime}
+                        onChange={(value) => handleConfigChange('firstRaceStartTime', value)}
+                      />
+                      <LabeledNumber
+                        label="Intervalo (min)"
+                        value={String(configDraft.raceIntervalMinutes)}
+                        onChange={(value) => handleConfigChange('raceIntervalMinutes', value)}
+                        min={1}
+                      />
+                      <LabeledSelect
+                        label="Reparto grupos"
+                        value={configDraft.splitMode}
+                        onChange={(value) => handleConfigChange('splitMode', value)}
+                        options={[
+                          { value: 'classification', label: 'Por clasificación' },
+                          { value: 'random', label: 'Random' },
+                          { value: 'level', label: 'Por niveles' },
+                          { value: 'team', label: 'Por equipo' },
+                          { value: 'kart', label: 'Por kart' }
+                        ]}
+                      />
+                      <LabeledSelect
+                        label="390cc en"
+                        value={configDraft.parity390}
+                        onChange={(value) => handleConfigChange('parity390', value)}
+                        options={[
+                          { value: 'odd', label: 'Posiciones impares' },
+                          { value: 'even', label: 'Posiciones pares' }
+                        ]}
+                      />
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleGenerateRaces}
+                        className="rounded-xl border border-gp-racingRed/55 bg-gp-racingRed/[0.18] px-5 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-red-100 transition-all duration-200 hover:bg-gp-racingRed/[0.28] hover:text-white"
+                      >
+                        Generar ahora
+                      </button>
+                    </div>
+                  </article>
+                ) : null}
 
                 <div className="space-y-5">
                   {stored.races.length === 0 ? (
@@ -664,6 +722,35 @@ function LabeledTime({
   );
 }
 
+function LabeledSelect({
+  label,
+  value,
+  onChange,
+  options
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: Array<{ value: string; label: string }>;
+}) {
+  return (
+    <div className="space-y-1">
+      <label className="text-[11px] uppercase tracking-[0.12em] text-gp-textSoft">{label}</label>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full rounded-lg border border-white/20 bg-[rgba(17,24,38,0.75)] px-3 py-2 text-sm text-white outline-none transition-colors focus:border-gp-telemetryBlue/55"
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value} className="bg-[#111826] text-white">
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 function buildRaceGrids(
   standings: Array<{
     pilotId: string;
@@ -678,13 +765,14 @@ function buildRaceGrids(
 ): RaceGrid[] {
   const totalSlots = config.groupsPerRace * config.pilotsPerGroup;
   const selected = standings.slice(0, totalSlots);
+  const arranged = arrangePilotsForGroups(selected, config.splitMode, teamByPilotId, pilotsById);
 
   return Array.from({ length: config.raceCount }, (_, raceIndex) => {
     const raceStartTime = buildClockTime(config.firstRaceStartTime, raceIndex * config.raceIntervalMinutes);
 
     const groups = Array.from({ length: config.groupsPerRace }, (_, groupIndex) => {
       const start = groupIndex * config.pilotsPerGroup;
-      const groupStandings = selected.slice(start, start + config.pilotsPerGroup);
+      const groupStandings = arranged.slice(start, start + config.pilotsPerGroup);
 
       const mapPilot = (pilot: (typeof groupStandings)[number], startPosition: number): RacePilot => ({
         pilotId: pilot.pilotId,
@@ -709,8 +797,11 @@ function buildRaceGrids(
       const category390Source = sortByQualy(groupStandings.filter((pilot) => pilotsById.get(pilot.pilotId)?.kart === '390cc'));
       const category270Source = sortByQualy(groupStandings.filter((pilot) => pilotsById.get(pilot.pilotId)?.kart === '270cc'));
 
-      const category390 = category390Source.map((pilot, index) => mapPilot(pilot, 1 + index * 2));
-      const category270 = category270Source.map((pilot, index) => mapPilot(pilot, 2 + index * 2));
+      const starts390 = config.parity390 === 'odd' ? 1 : 2;
+      const starts270 = config.parity390 === 'odd' ? 2 : 1;
+
+      const category390 = category390Source.map((pilot, index) => mapPilot(pilot, starts390 + index * 2));
+      const category270 = category270Source.map((pilot, index) => mapPilot(pilot, starts270 + index * 2));
 
       return {
         id: `race-${raceIndex + 1}-group-${groupIndex + 1}`,
@@ -903,7 +994,9 @@ function validateRaceConfig(
       groupsPerRace,
       pilotsPerGroup,
       firstRaceStartTime: draft.firstRaceStartTime,
-      raceIntervalMinutes
+      raceIntervalMinutes,
+      splitMode: isValidSplitMode(draft.splitMode) ? draft.splitMode : DEFAULT_CONFIG.splitMode,
+      parity390: draft.parity390 === 'even' ? 'even' : 'odd'
     }
   };
 }
@@ -920,8 +1013,90 @@ function parseRaceConfig(value: unknown, fallback: RaceConfig): RaceConfig {
     groupsPerRace: sanitizePositive(candidate.groupsPerRace, fallback.groupsPerRace),
     pilotsPerGroup: sanitizePositive(candidate.pilotsPerGroup, fallback.pilotsPerGroup),
     firstRaceStartTime: isValidTimeString(candidate.firstRaceStartTime) ? candidate.firstRaceStartTime : fallback.firstRaceStartTime,
-    raceIntervalMinutes: sanitizePositive(candidate.raceIntervalMinutes, fallback.raceIntervalMinutes)
+    raceIntervalMinutes: sanitizePositive(candidate.raceIntervalMinutes, fallback.raceIntervalMinutes),
+    splitMode: isValidSplitMode(candidate.splitMode) ? candidate.splitMode : fallback.splitMode,
+    parity390: candidate.parity390 === 'even' ? 'even' : fallback.parity390
   };
+}
+
+function arrangePilotsForGroups(
+  pilots: Array<{ pilotId: string; numeroPiloto: number; fullName: string; position: number }>,
+  mode: RaceConfig['splitMode'],
+  teamByPilotId: Map<string, string>,
+  pilotsById: Map<string, { kart: '390cc' | '270cc'; nivel?: 'PRO' | 'AMATEUR' | 'PRINCIPIANTE' }>
+) {
+  if (mode === 'random') {
+    return shufflePilots(pilots);
+  }
+
+  if (mode === 'level') {
+    const priority: Record<'PRO' | 'AMATEUR' | 'PRINCIPIANTE', number> = {
+      PRO: 0,
+      AMATEUR: 1,
+      PRINCIPIANTE: 2
+    };
+
+    return [...pilots].sort((a, b) => {
+      const levelA = pilotsById.get(a.pilotId)?.nivel ?? 'PRINCIPIANTE';
+      const levelB = pilotsById.get(b.pilotId)?.nivel ?? 'PRINCIPIANTE';
+      const diff = priority[levelA] - priority[levelB];
+      if (diff !== 0) return diff;
+      return a.position - b.position;
+    });
+  }
+
+  if (mode === 'kart') {
+    return [...pilots].sort((a, b) => {
+      const kartA = pilotsById.get(a.pilotId)?.kart ?? '270cc';
+      const kartB = pilotsById.get(b.pilotId)?.kart ?? '270cc';
+      const diff = kartA === kartB ? 0 : kartA === '390cc' ? -1 : 1;
+      if (diff !== 0) return diff;
+      return a.position - b.position;
+    });
+  }
+
+  if (mode === 'team') {
+    const buckets = new Map<string, Array<(typeof pilots)[number]>>();
+    pilots.forEach((pilot) => {
+      const team = teamByPilotId.get(pilot.pilotId) ?? 'Sin equipo';
+      const list = buckets.get(team) ?? [];
+      list.push(pilot);
+      buckets.set(team, list);
+    });
+
+    const orderedTeams = Array.from(buckets.keys()).sort();
+    const flattened: Array<(typeof pilots)[number]> = [];
+    let keepGoing = true;
+
+    while (keepGoing) {
+      keepGoing = false;
+      orderedTeams.forEach((team) => {
+        const list = buckets.get(team) ?? [];
+        const next = list.shift();
+        if (next) {
+          flattened.push(next);
+          keepGoing = true;
+        }
+      });
+    }
+
+    return flattened;
+  }
+
+  return pilots;
+}
+
+function shufflePilots<T>(list: T[]) {
+  const next = [...list];
+  for (let i = next.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [next[i], next[j]] = [next[j], next[i]];
+  }
+  return next;
+}
+
+function isValidSplitMode(value: unknown): value is RaceConfig['splitMode'] {
+  return value === 'classification' || value === 'random' || value === 'level' || value === 'team' || value === 'kart';
 }
 
 function isDynamicRaceGrid(value: unknown): value is RaceGrid {
