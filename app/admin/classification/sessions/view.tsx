@@ -351,28 +351,37 @@ export default function ClassificationSessionsPage() {
                               </div>
 
                               <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                                <input
-                                  type="time"
-                                  value={draft.startTime}
-                                  onChange={(event) => updateDraftField(session.id, 'startTime', event.target.value)}
-                                  className="rounded-lg border border-white/20 bg-[rgba(17,24,38,0.75)] px-3 py-2 text-xs text-white outline-none transition-colors focus:border-gp-telemetryBlue/55"
-                                />
-                                <input
-                                  type="number"
-                                  min={1}
-                                  value={draft.duration}
-                                  onChange={(event) => updateDraftField(session.id, 'duration', event.target.value)}
-                                  className="rounded-lg border border-white/20 bg-[rgba(17,24,38,0.75)] px-3 py-2 text-xs text-white outline-none transition-colors focus:border-gp-telemetryBlue/55"
-                                  placeholder="Duración"
-                                />
-                                <input
-                                  type="number"
-                                  min={1}
-                                  value={draft.maxCapacity}
-                                  onChange={(event) => updateDraftField(session.id, 'maxCapacity', event.target.value)}
-                                  className="rounded-lg border border-white/20 bg-[rgba(17,24,38,0.75)] px-3 py-2 text-xs text-white outline-none transition-colors focus:border-gp-telemetryBlue/55"
-                                  placeholder="Capacidad"
-                                />
+                                <div className="space-y-1">
+                                  <label className="text-[10px] font-semibold uppercase tracking-[0.12em] text-gp-textSoft">Hora inicio</label>
+                                  <input
+                                    type="time"
+                                    value={draft.startTime}
+                                    onChange={(event) => updateDraftField(session.id, 'startTime', event.target.value)}
+                                    className="w-full rounded-lg border border-white/20 bg-[rgba(17,24,38,0.75)] px-3 py-2 text-xs text-white outline-none transition-colors focus:border-gp-telemetryBlue/55"
+                                  />
+                                </div>
+
+                                <div className="space-y-1">
+                                  <label className="text-[10px] font-semibold uppercase tracking-[0.12em] text-gp-textSoft">Duración (min)</label>
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    value={draft.duration}
+                                    onChange={(event) => updateDraftField(session.id, 'duration', event.target.value)}
+                                    className="w-full rounded-lg border border-white/20 bg-[rgba(17,24,38,0.75)] px-3 py-2 text-xs text-white outline-none transition-colors focus:border-gp-telemetryBlue/55"
+                                  />
+                                </div>
+
+                                <div className="space-y-1">
+                                  <label className="text-[10px] font-semibold uppercase tracking-[0.12em] text-gp-textSoft">Capacidad</label>
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    value={draft.maxCapacity}
+                                    onChange={(event) => updateDraftField(session.id, 'maxCapacity', event.target.value)}
+                                    className="w-full rounded-lg border border-white/20 bg-[rgba(17,24,38,0.75)] px-3 py-2 text-xs text-white outline-none transition-colors focus:border-gp-telemetryBlue/55"
+                                  />
+                                </div>
                               </div>
 
                               <div className="flex items-center gap-2">
