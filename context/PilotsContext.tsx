@@ -6,14 +6,16 @@ import { useActiveEvent } from '@/context/ActiveEventContext';
 import { loadModuleState, saveModuleState } from '@/lib/eventStateClient';
 import { useEventRuntimeConfig } from '@/lib/event-client';
 
-type NewPilotInput = Omit<PilotRecord, 'id' | 'numeroPiloto'> & {
+type NewPilotInput = Omit<PilotRecord, 'id' | 'numeroPiloto' | 'loginCode'> & {
   id?: string;
+  loginCode?: string;
 };
 
 const PHONE_REGEX = /^\d{9}$/;
 
-type LegacyPilotRecord = Omit<PilotRecord, 'hasTimeAttack'> & {
+type LegacyPilotRecord = Omit<PilotRecord, 'hasTimeAttack' | 'loginCode'> & {
   hasTimeAttack?: boolean;
+  loginCode?: string;
   tandas?: string[];
 };
 
@@ -84,6 +86,7 @@ export function PilotsProvider({ children }: { children: React.ReactNode }) {
     const createdPilot: PilotRecord = {
       ...pilot,
       id: pilot.id ?? createPilotId(),
+      loginCode: createUniquePilotLoginCode(nextNumber, new Set(pilots.map((item) => item.loginCode))),
       numeroPiloto: nextNumber
     };
 
@@ -143,8 +146,29 @@ function normalizePilotRecord(pilot: LegacyPilotRecord): PilotRecord {
 
   return {
     ...rest,
+    loginCode: normalizePilotLoginCode(pilot.loginCode, pilot.numeroPiloto, pilot.id),
     hasTimeAttack: typeof hasTimeAttack === 'boolean' ? hasTimeAttack : hasTimeAttackFromLegacy
   };
+}
+
+function normalizePilotLoginCode(value: unknown, numeroPiloto: number, pilotId: string) {
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return value.trim().toUpperCase();
+  }
+
+  const suffix = pilotId.replace(/[^a-zA-Z0-9]/g, '').slice(-4).toUpperCase().padStart(4, '0');
+  return `GP-${String(Math.max(1, numeroPiloto)).padStart(3, '0')}-${suffix}`;
+}
+
+function createUniquePilotLoginCode(numeroPiloto: number, existingCodes: Set<string>) {
+  let candidate = '';
+
+  do {
+    const random = Math.floor(Math.random() * 10000);
+    candidate = `GP-${String(numeroPiloto).padStart(3, '0')}-${String(random).padStart(4, '0')}`;
+  } while (existingCodes.has(candidate));
+
+  return candidate;
 }
 
 function validatePilotData(pilot: Pick<PilotRecord, 'nombre' | 'apellidos' | 'edad' | 'telefono' | 'peso'>) {

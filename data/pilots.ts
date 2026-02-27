@@ -3,6 +3,7 @@ export type PilotKart = '270cc' | '390cc';
 
 export type PilotRecord = {
   id: string;
+  loginCode: string;
   numeroPiloto: number;
   nombre: string;
   apellidos: string;
@@ -77,6 +78,7 @@ function createMockPilots(totalPilots: number): PilotRecord[] {
 
     return {
       id: `p-${index + 1}`,
+      loginCode: `GP-${String(index + 1).padStart(3, '0')}-${String((index * 37 + 1111) % 10000).padStart(4, '0')}`,
       numeroPiloto: index + 1,
       nombre: firstName,
       apellidos: `${surnameA} ${surnameB}`,

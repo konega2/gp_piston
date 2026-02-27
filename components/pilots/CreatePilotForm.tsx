@@ -155,7 +155,9 @@ export function CreatePilotForm() {
       });
 
       console.log('GP PISTÓN | Registro de piloto (mock):', createdPilot);
-      setFeedbackMessage(`Piloto #${String(createdPilot.numeroPiloto).padStart(2, '0')} registrado correctamente.`);
+      setFeedbackMessage(
+        `Piloto #${String(createdPilot.numeroPiloto).padStart(2, '0')} registrado. Código de acceso: ${createdPilot.loginCode}`
+      );
     } catch (error) {
       if (error instanceof Error && error.message === 'MAX_PILOTS_REACHED') {
         setValidationError('Se alcanzó el máximo de participantes para este evento.');

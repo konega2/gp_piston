@@ -263,6 +263,7 @@ export function PilotProfile({ pilot }: PilotProfileProps) {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <InfoPanel title="INFORMACIÓN PERSONAL" editMode={isEditMode}>
+          <InfoItem label="Código acceso" value={profileData.loginCode} editMode={false} />
           <InfoItem
             label="Edad"
             value={`${profileData.edad} años`}

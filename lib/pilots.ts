@@ -3,6 +3,7 @@ import { sql } from '@/lib/db';
 export type PilotDBRecord = {
   id: string;
   event_id: string;
+  login_code: string | null;
   number: number;
   name: string;
   apellidos: string | null;
@@ -17,6 +18,7 @@ export type PilotDBRecord = {
 
 export type PilotInput = {
   number: number;
+  loginCode?: string;
   name: string;
   apellidos?: string;
   edad?: number;
@@ -47,12 +49,17 @@ export async function getPilotsByEvent(eventId: string): Promise<PilotDBRecord[]
 export async function createPilot(eventId: string, data: PilotInput): Promise<string> {
   validatePilotInput(data);
   const id = crypto.randomUUID();
+  const loginCode =
+    typeof data.loginCode === 'string' && data.loginCode.trim().length > 0
+      ? data.loginCode.trim().toUpperCase()
+      : buildPilotLoginCode(data.number);
 
   await sql`
-    INSERT INTO pilots (id, event_id, number, name, apellidos, edad, telefono, redes_sociales, peso, nivel, has_time_attack)
+    INSERT INTO pilots (id, event_id, login_code, number, name, apellidos, edad, telefono, redes_sociales, peso, nivel, has_time_attack)
     VALUES (
       ${id},
       ${eventId},
+      ${loginCode},
       ${Math.floor(data.number)},
       ${data.name.trim()},
       ${data.apellidos?.trim() ?? null},
@@ -75,6 +82,7 @@ export async function updatePilot(eventId: string, pilotId: string, data: PilotI
     UPDATE pilots
     SET
       number = ${Math.floor(data.number)},
+      login_code = COALESCE(${data.loginCode?.trim()?.toUpperCase() ?? null}, login_code),
       name = ${data.name.trim()},
       apellidos = ${data.apellidos?.trim() ?? null},
       edad = ${typeof data.edad === 'number' ? Math.floor(data.edad) : null},
@@ -85,6 +93,12 @@ export async function updatePilot(eventId: string, pilotId: string, data: PilotI
       has_time_attack = ${Boolean(data.hasTimeAttack)}
     WHERE id = ${pilotId} AND event_id = ${eventId};
   `;
+}
+
+function buildPilotLoginCode(pilotNumber: number) {
+  const safeNumber = Math.max(1, Math.floor(pilotNumber));
+  const random = Math.floor(Math.random() * 10000);
+  return `GP-${String(safeNumber).padStart(3, '0')}-${String(random).padStart(4, '0')}`;
 }
 
 export async function deletePilot(eventId: string, pilotId: string): Promise<void> {

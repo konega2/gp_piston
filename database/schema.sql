@@ -25,6 +25,7 @@ CREATE INDEX IF NOT EXISTS idx_event_state_module_key ON event_state(module_key)
 CREATE TABLE IF NOT EXISTS pilots (
   id TEXT PRIMARY KEY,
   event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  login_code TEXT,
   number INTEGER NOT NULL,
   name TEXT NOT NULL,
   apellidos TEXT,
