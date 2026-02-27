@@ -4,6 +4,7 @@ export type PilotDBRecord = {
   id: string;
   event_id: string;
   login_code: string | null;
+  avatar_url?: string | null;
   number: number;
   name: string;
   apellidos: string | null;
@@ -19,6 +20,7 @@ export type PilotDBRecord = {
 export type PilotInput = {
   number: number;
   loginCode?: string;
+  avatarUrl?: string;
   name: string;
   apellidos?: string;
   edad?: number;

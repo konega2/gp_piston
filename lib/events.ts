@@ -1,6 +1,8 @@
 import { sql } from '@/lib/db';
+import { ensureUniqueSlug, generateSlug } from '@/lib/slug';
 
 let eventsTableReady: Promise<void> | null = null;
+let eventSlugsBackfilled: Promise<void> | null = null;
 
 async function ensureEventsTable() {
   if (!eventsTableReady) {
@@ -8,6 +10,7 @@ async function ensureEventsTable() {
       await sql`
         CREATE TABLE IF NOT EXISTS events (
           id TEXT PRIMARY KEY,
+          slug TEXT,
           name TEXT NOT NULL,
           location TEXT,
           date DATE,
@@ -16,14 +19,55 @@ async function ensureEventsTable() {
           created_at TIMESTAMP NOT NULL DEFAULT NOW()
         );
       `;
+
+      await sql`
+        ALTER TABLE events
+        ADD COLUMN IF NOT EXISTS slug TEXT;
+      `;
+
+      await sql`
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_events_slug
+        ON events(slug);
+      `;
+
+      if (!eventSlugsBackfilled) {
+        eventSlugsBackfilled = backfillMissingEventSlugs();
+      }
+
+      await eventSlugsBackfilled;
     })();
   }
 
   await eventsTableReady;
 }
 
+async function backfillMissingEventSlugs() {
+  const { rows } = await sql<{ id: string; name: string; slug: string | null }>`
+    SELECT id, name, slug
+    FROM events
+    WHERE slug IS NULL OR BTRIM(slug) = '';
+  `;
+
+  for (const row of rows) {
+    const base = generateSlug(row.name || row.id);
+    const uniqueSlug = await ensureUniqueSlug(base);
+
+    await sql`
+      UPDATE events
+      SET slug = ${uniqueSlug}
+      WHERE id = ${row.id};
+    `;
+  }
+
+  await sql`
+    ALTER TABLE events
+    ALTER COLUMN slug SET NOT NULL;
+  `;
+}
+
 export type EventRow = {
   id: string;
+  slug: string;
   name: string;
   location: string | null;
   date: string | Date | null;
@@ -40,6 +84,7 @@ export type EventRow = {
 };
 
 export type EventInput = {
+  slug?: string;
   name: string;
   date: string;
   location: string;
@@ -96,6 +141,7 @@ export async function createEvent(data: EventInput): Promise<string> {
   await ensureEventsTable();
 
   const id = crypto.randomUUID();
+  const baseSlug = generateSlug(data.name.trim());
   const config = {
     maxPilots: data.maxParticipants,
     timeAttackSessions: data.timeAttackSessions,
@@ -107,11 +153,26 @@ export async function createEvent(data: EventInput): Promise<string> {
   };
 
   try {
-    await sql`
-      INSERT INTO events (id, name, location, date, status, config)
-      VALUES (${id}, ${data.name.trim()}, ${data.location.trim()}, ${data.date}, ${'active'}, ${JSON.stringify(config)}::jsonb);
-    `;
-    return id;
+    let slug = await ensureUniqueSlug(baseSlug);
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        await sql`
+          INSERT INTO events (id, slug, name, location, date, status, config)
+          VALUES (${id}, ${slug}, ${data.name.trim()}, ${data.location.trim()}, ${data.date}, ${'active'}, ${JSON.stringify(config)}::jsonb);
+        `;
+
+        return id;
+      } catch (error) {
+        if ((error as any)?.code === '23505') {
+          slug = await ensureUniqueSlug(baseSlug);
+          continue;
+        }
+
+        throw error;
+      }
+    }
+    throw new Error('No se pudo crear el evento.');
   } catch {
     throw new Error('No se pudo crear el evento.');
   }
