@@ -13,7 +13,7 @@ type NewPilotInput = Omit<PilotRecord, 'id' | 'numeroPiloto' | 'loginCode'> & {
 
 const PHONE_REGEX = /^\d{9}$/;
 
-type LegacyPilotRecord = Omit<PilotRecord, 'hasTimeAttack' | 'loginCode'> & {
+type LegacyPilotRecord = Partial<Omit<PilotRecord, 'hasTimeAttack' | 'loginCode'>> & {
   hasTimeAttack?: boolean;
   loginCode?: string;
   tandas?: string[];
@@ -34,6 +34,7 @@ export function PilotsProvider({ children }: { children: React.ReactNode }) {
   const runtimeConfig = useEventRuntimeConfig(activeEventId);
   const [pilots, setPilots] = useState<PilotRecord[]>([]);
   const [isHydrated, setIsHydrated] = useState(false);
+  const [canAutoPersist, setCanAutoPersist] = useState(false);
   const maxPilots = runtimeConfig?.maxPilots ?? 0;
 
   useEffect(() => {
@@ -42,19 +43,29 @@ export function PilotsProvider({ children }: { children: React.ReactNode }) {
     }
 
     setIsHydrated(false);
+    setCanAutoPersist(false);
 
     void (async () => {
       try {
         const stored = await loadModuleState<LegacyPilotRecord[]>(activeEventId, 'pilots', []);
         if (!Array.isArray(stored) || stored.length === 0) {
           setPilots([]);
+          setCanAutoPersist(false);
           return;
         }
 
-        const storedPilots = stored.map(normalizePilotRecord);
+        const storedPilots = stored.map(normalizePilotRecord).filter((item): item is PilotRecord => Boolean(item));
+        if (storedPilots.length === 0) {
+          setPilots([]);
+          setCanAutoPersist(false);
+          return;
+        }
+
         setPilots(sortPilots(storedPilots));
+        setCanAutoPersist(true);
       } catch {
         setPilots([]);
+        setCanAutoPersist(false);
       } finally {
         setIsHydrated(true);
       }
@@ -62,12 +73,12 @@ export function PilotsProvider({ children }: { children: React.ReactNode }) {
   }, [activeEventHydrated, activeEventId, runtimeConfig]);
 
   useEffect(() => {
-    if (!isHydrated || !activeEventHydrated) {
+    if (!isHydrated || !activeEventHydrated || !canAutoPersist) {
       return;
     }
 
     void saveModuleState(activeEventId, 'pilots', pilots);
-  }, [pilots, isHydrated, activeEventHydrated, activeEventId]);
+  }, [pilots, isHydrated, activeEventHydrated, activeEventId, canAutoPersist]);
 
   const addPilot = (pilot: NewPilotInput): PilotRecord => {
     if (!runtimeConfig) {
@@ -90,6 +101,7 @@ export function PilotsProvider({ children }: { children: React.ReactNode }) {
       numeroPiloto: nextNumber
     };
 
+    setCanAutoPersist(true);
     setPilots((prev) => sortPilots([...prev, createdPilot]));
     return createdPilot;
   };
@@ -97,6 +109,7 @@ export function PilotsProvider({ children }: { children: React.ReactNode }) {
   const updatePilot = (id: string, updatedPilot: PilotRecord) => {
     validatePilotData(updatedPilot);
 
+    setCanAutoPersist(true);
     setPilots((prev) => {
       const numberIsTaken = prev.some((pilot) => pilot.id !== id && pilot.numeroPiloto === updatedPilot.numeroPiloto);
       const safePilot = numberIsTaken
@@ -108,6 +121,7 @@ export function PilotsProvider({ children }: { children: React.ReactNode }) {
   };
 
   const deletePilot = (id: string) => {
+    setCanAutoPersist(true);
     setPilots((prev) => prev.filter((pilot) => pilot.id !== id));
   };
 
@@ -140,14 +154,37 @@ function createPilotId() {
   return `pilot-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function normalizePilotRecord(pilot: LegacyPilotRecord): PilotRecord {
+function normalizePilotRecord(pilot: LegacyPilotRecord): PilotRecord | null {
+  if (!pilot || typeof pilot !== 'object') {
+    return null;
+  }
+
   const { tandas, hasTimeAttack, ...rest } = pilot;
   const hasTimeAttackFromLegacy = Array.isArray(pilot.tandas) && pilot.tandas.length > 0;
+  const numeroPiloto =
+    typeof pilot.numeroPiloto === 'number' && Number.isFinite(pilot.numeroPiloto) && pilot.numeroPiloto > 0
+      ? Math.floor(pilot.numeroPiloto)
+      : 1;
+  const id = typeof pilot.id === 'string' && pilot.id.trim().length > 0 ? pilot.id : createPilotId();
+  const nivel = pilot.nivel === 'PRO' || pilot.nivel === 'AMATEUR' || pilot.nivel === 'PRINCIPIANTE' ? pilot.nivel : 'PRINCIPIANTE';
+  const kart = pilot.kart === '270cc' || pilot.kart === '390cc' ? pilot.kart : nivel === 'PRO' ? '390cc' : '270cc';
 
   return {
     ...rest,
-    loginCode: normalizePilotLoginCode(pilot.loginCode, pilot.numeroPiloto, pilot.id),
-    hasTimeAttack: typeof hasTimeAttack === 'boolean' ? hasTimeAttack : hasTimeAttackFromLegacy
+    id,
+    numeroPiloto,
+    nombre: typeof pilot.nombre === 'string' ? pilot.nombre : '',
+    apellidos: typeof pilot.apellidos === 'string' ? pilot.apellidos : '',
+    edad: typeof pilot.edad === 'number' && Number.isFinite(pilot.edad) ? Math.floor(pilot.edad) : 18,
+    telefono: typeof pilot.telefono === 'string' ? pilot.telefono : '',
+    redesSociales: typeof pilot.redesSociales === 'string' ? pilot.redesSociales : '',
+    peso: typeof pilot.peso === 'number' && Number.isFinite(pilot.peso) ? pilot.peso : null,
+    nivel,
+    hasTimeAttack: typeof hasTimeAttack === 'boolean' ? hasTimeAttack : hasTimeAttackFromLegacy,
+    kart,
+    comisario: typeof pilot.comisario === 'boolean' ? pilot.comisario : false,
+    foto: typeof pilot.foto === 'string' && pilot.foto.length > 0 ? pilot.foto : null,
+    loginCode: normalizePilotLoginCode(pilot.loginCode, numeroPiloto, id)
   };
 }
 

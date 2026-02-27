@@ -205,6 +205,19 @@ export default function RacesPage() {
       }
 
       const numeric = Number(value);
+
+      if (field === 'groupsPerRace') {
+        const safeGroups = Number.isFinite(numeric) && numeric > 0 ? Math.floor(numeric) : 0;
+        const participantsCount = Math.max(standingsWithPosition.length, pilots.length, 1);
+        const autoPilotsPerGroup = safeGroups > 0 ? Math.max(1, Math.ceil(participantsCount / safeGroups)) : 0;
+
+        return {
+          ...prev,
+          groupsPerRace: safeGroups,
+          pilotsPerGroup: autoPilotsPerGroup
+        };
+      }
+
       return {
         ...prev,
         [field]: Number.isFinite(numeric) ? numeric : 0
