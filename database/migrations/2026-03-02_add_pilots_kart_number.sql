@@ -1,0 +1,6 @@
+BEGIN;
+
+ALTER TABLE pilots
+ADD COLUMN IF NOT EXISTS kart_number INTEGER;
+
+COMMIT;
