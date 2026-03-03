@@ -33,6 +33,8 @@ type SaveSessionTimesInput = {
   }>;
 };
 
+export type TimeAttackSessionTemporalStatus = 'pending' | 'open' | 'closed';
+
 type TimeAttackContextValue = {
   sessions: TimeAttackSession[];
   isHydrated: boolean;
@@ -581,4 +583,76 @@ function getNextSessionStartTime(list: TimeAttackSession[]) {
   const nextHour = Math.floor(total / 60) % 24;
   const nextMinute = total % 60;
   return `${String(nextHour).padStart(2, '0')}:${String(nextMinute).padStart(2, '0')}`;
+}
+
+export function getTimeAttackSessionTemporalStatus(
+  session: TimeAttackSession,
+  eventDate: string | Date | null | undefined
+): TimeAttackSessionTemporalStatus {
+  if (session.status === 'closed') {
+    return 'closed';
+  }
+
+  const eventDay = parseEventDate(eventDate);
+  if (!eventDay) {
+    return 'pending';
+  }
+
+  const [hourText, minuteText] = session.startTime.split(':');
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const duration = Number.isFinite(session.duration) ? Math.max(1, Math.floor(session.duration)) : 1;
+
+  if (!Number.isFinite(hour) || !Number.isFinite(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    return 'pending';
+  }
+
+  const startAt = new Date(
+    eventDay.getFullYear(),
+    eventDay.getMonth(),
+    eventDay.getDate(),
+    hour,
+    minute,
+    0,
+    0
+  ).getTime();
+
+  const endAt = startAt + duration * 60 * 1000;
+  const now = Date.now();
+
+  if (now < startAt) {
+    return 'pending';
+  }
+
+  if (now >= endAt) {
+    return 'closed';
+  }
+
+  return 'open';
+}
+
+function parseEventDate(value: string | Date | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) {
+      return null;
+    }
+
+    return new Date(value.getFullYear(), value.getMonth(), value.getDate(), 0, 0, 0, 0);
+  }
+
+  const clean = value.slice(0, 10);
+  const [yearText, monthText, dayText] = clean.split('-');
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+    return null;
+  }
+
+  return new Date(year, month - 1, day, 0, 0, 0, 0);
 }

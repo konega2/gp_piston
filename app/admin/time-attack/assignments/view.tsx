@@ -6,10 +6,12 @@ import { Header } from '@/components/layout/Header';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { useActiveEvent } from '@/context/ActiveEventContext';
 import { usePilots } from '@/context/PilotsContext';
-import { useTimeAttackSessions } from '@/context/TimeAttackContext';
+import { getTimeAttackSessionTemporalStatus, useTimeAttackSessions } from '@/context/TimeAttackContext';
+import { useEventInfo } from '@/lib/event-client';
 
 export default function TimeAttackAssignmentsPage() {
   const { activeEventId } = useActiveEvent();
+  const eventInfo = useEventInfo(activeEventId);
   const { pilots } = usePilots();
   const { sessions, isHydrated, togglePilotAssignment } = useTimeAttackSessions();
 
@@ -160,7 +162,9 @@ export default function TimeAttackAssignmentsPage() {
                           {sortedSessions.map((session) => {
                             const assignedCount = session.assignedPilots.length;
                             const occupancyPercent = Math.min((assignedCount / session.maxCapacity) * 100, 100);
-                            const isClosed = session.status === 'closed';
+                            const temporalStatus = getTimeAttackSessionTemporalStatus(session, eventInfo?.date ?? null);
+                            const isClosed = temporalStatus === 'closed';
+                            const isOpen = temporalStatus === 'open';
                             const isFull = assignedCount >= session.maxCapacity;
 
                             return (
@@ -194,10 +198,10 @@ export default function TimeAttackAssignmentsPage() {
 
                                   <p
                                     className={`mt-2 text-[11px] font-semibold uppercase tracking-[0.12em] ${
-                                      isClosed ? 'text-red-200' : 'text-cyan-200'
+                                      isClosed ? 'text-red-200' : isOpen ? 'text-green-200' : 'text-cyan-200'
                                     }`}
                                   >
-                                    {isClosed ? 'CERRADA' : isFull ? 'LLENA' : 'PENDIENTE'}
+                                    {isClosed ? 'CERRADA' : isOpen ? 'ABIERTA' : isFull ? 'LLENA' : 'PENDIENTE'}
                                   </p>
                                 </div>
                               </div>
@@ -224,7 +228,7 @@ export default function TimeAttackAssignmentsPage() {
                       <div className="mt-4 flex flex-wrap gap-2">
                         {sortedSessions.map((session) => {
                           const active = selectedPilot ? session.assignedPilots.includes(selectedPilot.id) : false;
-                          const isClosed = session.status === 'closed';
+                          const isClosed = getTimeAttackSessionTemporalStatus(session, eventInfo?.date ?? null) === 'closed';
                           const isFull = session.assignedPilots.length >= session.maxCapacity;
                           const disabled = !selectedPilot || (isClosed && !active) || (isFull && !active);
 

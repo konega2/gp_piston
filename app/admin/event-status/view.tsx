@@ -10,7 +10,7 @@ import { usePilots } from '@/context/PilotsContext';
 import { useTimeAttackSessions } from '@/context/TimeAttackContext';
 import { loadModuleState, saveModuleState } from '@/lib/eventStateClient';
 import { EMPTY_RACE_RESULT, normalizeRaceResult, type StoredResults, type TeamRecord } from '@/lib/resultsEngine';
-import { useEventRuntimeConfig } from '@/lib/event-client';
+import { useEventInfo } from '@/lib/event-client';
 import { getResultsSnapshotByEventAction, getTeamsByEventAction } from '@/app/admin/events/[eventId]/actions';
 
 type EventPhaseState = {
@@ -43,8 +43,8 @@ type EventStatusControl = {
 
 type TimeWindow = {
   phase: EventOperationalPhase;
-  start: number;
-  end: number;
+  startAt: number;
+  endAt: number;
   label: string;
 };
 
@@ -68,7 +68,7 @@ const DEFAULT_STATUS_CONTROL: EventStatusControl = {
 
 export default function EventStatusPage() {
   const { activeEventId, isHydrated: activeEventHydrated } = useActiveEvent();
-  const runtimeConfig = useEventRuntimeConfig(activeEventId);
+  const eventInfo = useEventInfo(activeEventId);
   const { pilots, isHydrated: pilotsHydrated } = usePilots();
   const { sessions, isHydrated: timeAttackHydrated } = useTimeAttackSessions();
   const { qualySessions, qualyRecords, isHydrated: qualyHydrated } = useClassification();
@@ -80,7 +80,8 @@ export default function EventStatusPage() {
   const [isStatusControlHydrated, setIsStatusControlHydrated] = useState(false);
   const [racesPayload, setRacesPayload] = useState<unknown>(null);
 
-  const eventConfig = useMemo(() => runtimeConfig, [runtimeConfig]);
+  const eventConfig = useMemo(() => eventInfo?.config ?? null, [eventInfo?.config]);
+  const eventDate = eventInfo?.date ?? null;
 
   useEffect(() => {
     if (!activeEventHydrated) {
@@ -261,14 +262,18 @@ export default function EventStatusPage() {
       return { phase: 'evento-cerrado', detail: null };
     }
 
-    const nowMinutes = getCurrentMinutes();
+    if (!toEventDateStart(eventDate)) {
+      return { phase: 'pre-evento', detail: 'Define la fecha del evento' };
+    }
+
     const taWindows = buildSessionWindows(
       sessions.map((session) => ({
         startTime: session.startTime,
         duration: session.duration
       })),
       'time-attack',
-      'TA'
+      'TA',
+      eventDate
     );
     const qualyWindows = buildSessionWindows(
       qualySessions.map((session) => ({
@@ -276,13 +281,15 @@ export default function EventStatusPage() {
         duration: session.duration
       })),
       'qualy',
-      'Qualy'
+      'Qualy',
+      eventDate
     );
-    const raceWindows = buildRaceWindows(racesPayload);
+    const raceWindows = buildRaceWindows(racesPayload, eventDate);
 
-    const allWindows = [...taWindows, ...qualyWindows, ...raceWindows].sort((a, b) => a.start - b.start);
+    const allWindows = [...taWindows, ...qualyWindows, ...raceWindows].sort((a, b) => a.startAt - b.startAt);
 
-    const activeWindow = allWindows.find((window) => nowMinutes >= window.start && nowMinutes < window.end);
+    const now = Date.now();
+    const activeWindow = allWindows.find((window) => now >= window.startAt && now < window.endAt);
     if (activeWindow) {
       return { phase: activeWindow.phase, detail: activeWindow.label };
     }
@@ -303,8 +310,8 @@ export default function EventStatusPage() {
       return { phase: 'carrera-1', detail: 'Carrera 1' };
     }
 
-    const earliestStart = allWindows.length > 0 ? allWindows[0].start : null;
-    if (typeof earliestStart === 'number' && nowMinutes < earliestStart) {
+    const earliestStart = allWindows.length > 0 ? allWindows[0].startAt : null;
+    if (typeof earliestStart === 'number' && now < earliestStart) {
       return { phase: 'pre-evento', detail: null };
     }
 
@@ -313,7 +320,7 @@ export default function EventStatusPage() {
     }
 
     return { phase: 'time-attack-1', detail: 'TA 1' };
-  }, [qualySessions, results.race1.entries.length, results.race2.entries.length, sessions, status, racesPayload]);
+  }, [eventDate, qualySessions, results.race1.entries.length, results.race2.entries.length, sessions, status, racesPayload]);
 
   const activeOperationalPhase = statusControl.mode === 'manual' ? statusControl.manualPhase : automaticState.phase;
   const activeOperationalDetail = statusControl.mode === 'manual' ? null : automaticState.detail;
@@ -645,17 +652,17 @@ function isOperationalPhase(value: unknown): value is EventOperationalPhase {
   );
 }
 
-function getCurrentMinutes() {
-  const now = new Date();
-  return now.getHours() * 60 + now.getMinutes();
-}
-
 function buildSessionWindows(
   sessions: Array<{ startTime: unknown; duration: unknown }>,
   phasePrefix: 'time-attack' | 'qualy',
-  labelPrefix: string
+  labelPrefix: string,
+  eventDateValue: unknown
 ): TimeWindow[] {
   const total = sessions.length;
+  const eventDateStart = toEventDateStart(eventDateValue);
+  if (!eventDateStart) {
+    return [];
+  }
 
   const windows: TimeWindow[] = [];
 
@@ -668,8 +675,8 @@ function buildSessionWindows(
 
     windows.push({
       phase: `${phasePrefix}-${index + 1}`,
-      start,
-      end: Math.min(start + duration, 24 * 60),
+      startAt: toTimestampFromMinutes(eventDateStart, start),
+      endAt: toTimestampFromMinutes(eventDateStart, Math.min(start + duration, 24 * 60)),
       label: `${labelPrefix} ${index + 1}${total > 0 ? ` de ${total}` : ''}`
     });
   });
@@ -677,8 +684,13 @@ function buildSessionWindows(
   return windows;
 }
 
-function buildRaceWindows(value: unknown): TimeWindow[] {
+function buildRaceWindows(value: unknown, eventDateValue: unknown): TimeWindow[] {
   if (!value || typeof value !== 'object') {
+    return [];
+  }
+
+  const eventDateStart = toEventDateStart(eventDateValue);
+  if (!eventDateStart) {
     return [];
   }
 
@@ -702,8 +714,8 @@ function buildRaceWindows(value: unknown): TimeWindow[] {
 
     windows.push({
       phase: `carrera-${index + 1}`,
-      start,
-      end: Math.min(start + raceInterval, 24 * 60),
+      startAt: toTimestampFromMinutes(eventDateStart, start),
+      endAt: toTimestampFromMinutes(eventDateStart, Math.min(start + raceInterval, 24 * 60)),
       label: `Carrera ${index + 1}${total > 0 ? ` de ${total}` : ''}`
     });
   });
@@ -718,6 +730,48 @@ function parseRacesPayload(value: unknown): Array<{ startTime?: unknown }> {
 
   const payload = value as { races?: Array<{ startTime?: unknown }> };
   return Array.isArray(payload.races) ? payload.races : [];
+}
+
+function toEventDateStart(value: unknown): Date | null {
+  if (!value) {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) {
+      return null;
+    }
+
+    return new Date(value.getFullYear(), value.getMonth(), value.getDate(), 0, 0, 0, 0);
+  }
+
+  if (typeof value === 'string') {
+    const clean = value.slice(0, 10);
+    const [yearText, monthText, dayText] = clean.split('-');
+    const year = Number(yearText);
+    const month = Number(monthText);
+    const day = Number(dayText);
+
+    if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+      return null;
+    }
+
+    return new Date(year, month - 1, day, 0, 0, 0, 0);
+  }
+
+  return null;
+}
+
+function toTimestampFromMinutes(baseDate: Date, minutes: number) {
+  return new Date(
+    baseDate.getFullYear(),
+    baseDate.getMonth(),
+    baseDate.getDate(),
+    Math.floor(minutes / 60),
+    minutes % 60,
+    0,
+    0
+  ).getTime();
 }
 
 function sanitizePositive(value: unknown, fallback: number) {

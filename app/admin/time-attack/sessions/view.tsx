@@ -6,11 +6,11 @@ import { Sidebar } from '@/components/layout/Sidebar';
 import { useActiveEvent } from '@/context/ActiveEventContext';
 import { SessionCard } from '@/components/timeattack/SessionCard';
 import { useTimeAttackSessions } from '@/context/TimeAttackContext';
-import { useEventName } from '@/lib/event-client';
+import { useEventInfo } from '@/lib/event-client';
 
 export default function TimeAttackSessionsPage() {
   const { activeEventId, isHydrated: activeEventHydrated } = useActiveEvent();
-  const eventNameFromDb = useEventName(activeEventId);
+  const eventInfo = useEventInfo(activeEventId);
   const {
     sessions,
     addSession,
@@ -21,7 +21,8 @@ export default function TimeAttackSessionsPage() {
     updateSessionCapacity,
     isHydrated
   } = useTimeAttackSessions();
-  const eventName = activeEventHydrated ? eventNameFromDb ?? 'Evento' : 'Evento';
+  const eventName = activeEventHydrated ? eventInfo?.name ?? 'Evento' : 'Evento';
+  const eventDate = eventInfo?.date ?? null;
   const firstSession = sessions[0]?.name ?? 'T1';
   const lastSession = sessions[sessions.length - 1]?.name ?? 'T1';
   const maxCapacity = sessions[0]?.maxCapacity ?? 0;
@@ -83,6 +84,7 @@ export default function TimeAttackSessionsPage() {
                         onUpdateStartTime={updateSessionStartTime}
                         onUpdateDuration={updateSessionDuration}
                         onUpdateCapacity={updateSessionCapacity}
+                        eventDate={eventDate}
                       />
                     ))}
                   </div>

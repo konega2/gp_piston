@@ -6,10 +6,12 @@ import { Header } from '@/components/layout/Header';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { useActiveEvent } from '@/context/ActiveEventContext';
 import { usePilots } from '@/context/PilotsContext';
-import { useTimeAttackSessions } from '@/context/TimeAttackContext';
+import { getTimeAttackSessionTemporalStatus, useTimeAttackSessions } from '@/context/TimeAttackContext';
+import { useEventInfo } from '@/lib/event-client';
 
 export default function TimeAttackTimesPage() {
   const { activeEventId } = useActiveEvent();
+  const eventInfo = useEventInfo(activeEventId);
   const { pilots } = usePilots();
   const { sessions, isHydrated, saveSessionTimes } = useTimeAttackSessions();
 
@@ -30,6 +32,13 @@ export default function TimeAttackTimesPage() {
   }, [selectedSessionId, sortedSessions]);
 
   const selectedSession = sortedSessions.find((session) => session.id === selectedSessionId) ?? null;
+  const selectedSessionTemporalStatus = useMemo(() => {
+    if (!selectedSession) {
+      return 'pending' as const;
+    }
+
+    return getTimeAttackSessionTemporalStatus(selectedSession, eventInfo?.date ?? null);
+  }, [selectedSession, eventInfo?.date]);
 
   const assignedPilots = useMemo(() => {
     if (!selectedSession) {
@@ -75,7 +84,7 @@ export default function TimeAttackTimesPage() {
       return;
     }
 
-    if (selectedSession.status === 'closed') {
+    if (selectedSessionTemporalStatus === 'closed') {
       setError('Sesión cerrada. No se permite registrar tiempos.');
       return;
     }
@@ -214,7 +223,7 @@ export default function TimeAttackTimesPage() {
                                             [pilot.id]: event.target.value
                                           }))
                                         }
-                                        disabled={selectedSession.status === 'closed'}
+                                        disabled={selectedSessionTemporalStatus === 'closed'}
                                         placeholder="00.000"
                                         className="h-9 w-full rounded-md border border-white/15 bg-[#0E141F] px-2 text-sm text-white outline-none transition-all duration-200 focus:border-gp-racingRed/65 focus:shadow-input-red disabled:cursor-not-allowed disabled:opacity-45"
                                       />
@@ -255,7 +264,7 @@ export default function TimeAttackTimesPage() {
                       <button
                         type="button"
                         onClick={handleSave}
-                        disabled={selectedSession.status === 'closed'}
+                        disabled={selectedSessionTemporalStatus === 'closed'}
                         className="rounded-lg border border-gp-racingRed/55 bg-gp-racingRed/[0.15] px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.14em] text-red-100 transition-all duration-200 hover:bg-gp-racingRed/[0.25] hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
                       >
                         Guardar tiempos

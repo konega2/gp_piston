@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getSessionTimeRange, TimeAttackSession } from '@/data/timeAttackSessions';
 import { usePilots } from '@/context/PilotsContext';
+import { getTimeAttackSessionTemporalStatus } from '@/context/TimeAttackContext';
 
 type SessionCardProps = {
   session: TimeAttackSession;
@@ -9,6 +10,7 @@ type SessionCardProps = {
   onUpdateStartTime: (sessionId: string, startTime: string) => { ok: boolean; reason?: 'not-found' | 'invalid-time' };
   onUpdateDuration: (sessionId: string, duration: number) => { ok: boolean; reason?: 'not-found' | 'invalid-duration' };
   onUpdateCapacity: (sessionId: string, maxCapacity: number) => { ok: boolean; reason?: 'not-found' | 'invalid-capacity' };
+  eventDate: string | Date | null;
 };
 
 export function SessionCard({
@@ -17,12 +19,15 @@ export function SessionCard({
   onDelete,
   onUpdateStartTime,
   onUpdateDuration,
-  onUpdateCapacity
+  onUpdateCapacity,
+  eventDate
 }: SessionCardProps) {
   const { pilots } = usePilots();
   const assignedCount = session.assignedPilots.length;
   const occupancyPercent = Math.min((assignedCount / session.maxCapacity) * 100, 100);
-  const isClosed = session.status === 'closed';
+  const temporalStatus = getTimeAttackSessionTemporalStatus(session, eventDate);
+  const isClosed = temporalStatus === 'closed';
+  const isOpen = temporalStatus === 'open';
   const timeRange = getSessionTimeRange(session.startTime, session.duration);
   const [editableStartTime, setEditableStartTime] = useState(session.startTime);
   const [editableDuration, setEditableDuration] = useState(String(session.duration));
@@ -104,7 +109,9 @@ export function SessionCard({
       className={`relative overflow-hidden rounded-2xl border p-5 shadow-panel-deep backdrop-blur-xl transition-all duration-200 ${
         isClosed
           ? 'border-gp-racingRed/40 bg-[rgba(34,18,22,0.72)]'
-          : 'border-gp-telemetryBlue/30 bg-[rgba(17,24,38,0.72)] hover:-translate-y-0.5 hover:border-gp-telemetryBlue/45'
+          : isOpen
+            ? 'border-gp-stateGreen/35 bg-[rgba(18,34,28,0.72)] hover:-translate-y-0.5 hover:border-gp-stateGreen/45'
+            : 'border-gp-telemetryBlue/30 bg-[rgba(17,24,38,0.72)] hover:-translate-y-0.5 hover:border-gp-telemetryBlue/45'
       }`}
     >
       <span className="pointer-events-none absolute left-3 top-3 h-4 w-4 border-l border-t border-gp-telemetryBlue/45" />
@@ -127,7 +134,9 @@ export function SessionCard({
 
         <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
           <div
-            className={`h-full rounded-full transition-all duration-300 ${isClosed ? 'bg-gp-racingRed/70' : 'bg-gp-telemetryBlue/70'}`}
+            className={`h-full rounded-full transition-all duration-300 ${
+              isClosed ? 'bg-gp-racingRed/70' : isOpen ? 'bg-gp-stateGreen/70' : 'bg-gp-telemetryBlue/70'
+            }`}
             style={{ width: `${occupancyPercent}%` }}
           />
         </div>
@@ -230,11 +239,13 @@ export function SessionCard({
             className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] ${
               isClosed
                 ? 'border-gp-racingRed/55 bg-gp-racingRed/15 text-red-200'
-                : 'border-gp-telemetryBlue/55 bg-gp-telemetryBlue/15 text-cyan-200'
+                : isOpen
+                  ? 'border-gp-stateGreen/55 bg-gp-stateGreen/15 text-green-200'
+                  : 'border-gp-telemetryBlue/55 bg-gp-telemetryBlue/15 text-cyan-200'
             }`}
           >
-            <span className={`h-2 w-2 rounded-full ${isClosed ? 'bg-gp-racingRed' : 'bg-gp-telemetryBlue'}`} />
-            {isClosed ? 'Cerrada' : 'Pendiente'}
+            <span className={`h-2 w-2 rounded-full ${isClosed ? 'bg-gp-racingRed' : isOpen ? 'bg-gp-stateGreen' : 'bg-gp-telemetryBlue'}`} />
+            {isClosed ? 'Cerrada' : isOpen ? 'Abierta' : 'Pendiente'}
           </span>
 
           <button
