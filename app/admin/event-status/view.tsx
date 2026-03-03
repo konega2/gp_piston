@@ -657,21 +657,22 @@ function buildRaceWindows(value: unknown): TimeWindow[] {
   const raceInterval = toPositiveMinutes(payload.config?.raceIntervalMinutes) ?? 20;
   const races = Array.isArray(payload.races) ? payload.races : [];
 
-  return races
-    .slice(0, 2)
-    .map((race, index) => {
-      const start = parseTimeToMinutes(race?.startTime);
-      if (start === null) {
-        return null;
-      }
+  const windows: TimeWindow[] = [];
 
-      return {
-        phase: index === 0 ? 'carrera-1' : 'carrera-2',
-        start,
-        end: Math.min(start + raceInterval, 24 * 60)
-      } satisfies TimeWindow;
-    })
-    .filter((window): window is TimeWindow => Boolean(window));
+  races.slice(0, 2).forEach((race, index) => {
+    const start = parseTimeToMinutes(race?.startTime);
+    if (start === null) {
+      return;
+    }
+
+    windows.push({
+      phase: index === 0 ? 'carrera-1' : 'carrera-2',
+      start,
+      end: Math.min(start + raceInterval, 24 * 60)
+    });
+  });
+
+  return windows;
 }
 
 function parseTimeToMinutes(value: unknown): number | null {
