@@ -23,15 +23,7 @@ type EventPhaseState = {
   eventClosed: boolean;
 };
 
-type PhaseKey = keyof EventPhaseState;
 type PhaseVisualStatus = 'completed' | 'in-progress' | 'blocked';
-
-type PhaseConfig = {
-  key: PhaseKey;
-  title: string;
-  subtitle: string;
-  rule: string;
-};
 
 type EventStatusMode = 'automatic' | 'manual';
 
@@ -40,8 +32,7 @@ type EventOperationalPhase =
   | 'time-attack'
   | 'qualy'
   | 'equipos'
-  | 'carrera-1'
-  | 'carrera-2'
+  | `carrera-${number}`
   | 'resultados'
   | 'evento-cerrado';
 
@@ -54,6 +45,15 @@ type TimeWindow = {
   phase: EventOperationalPhase;
   start: number;
   end: number;
+  label: string;
+};
+
+type PhaseCard = {
+  key: string;
+  phase: EventOperationalPhase;
+  title: string;
+  subtitle: string;
+  rule: string;
 };
 
 const EMPTY_RESULTS: StoredResults = {
@@ -65,73 +65,6 @@ const DEFAULT_STATUS_CONTROL: EventStatusControl = {
   mode: 'automatic',
   manualPhase: 'pre-evento'
 };
-
-const OPERATIONAL_PHASE_LABEL: Record<EventOperationalPhase, string> = {
-  'pre-evento': 'Pre-evento',
-  'time-attack': 'Time Attack',
-  qualy: 'Qualy',
-  equipos: 'Equipos',
-  'carrera-1': 'Carrera 1',
-  'carrera-2': 'Carrera 2',
-  resultados: 'Resultados',
-  'evento-cerrado': 'Evento cerrado'
-};
-
-const MANUAL_PHASES: EventOperationalPhase[] = [
-  'pre-evento',
-  'time-attack',
-  'qualy',
-  'equipos',
-  'carrera-1',
-  'carrera-2',
-  'resultados',
-  'evento-cerrado'
-];
-
-const phaseConfig: PhaseConfig[] = [
-  {
-    key: 'timeAttackCompleted',
-    title: 'TIME ATTACK',
-    subtitle: 'Sesiones y cronometraje inicial',
-    rule: 'Todas las sesiones Time Attack cerradas'
-  },
-  {
-    key: 'qualyCompleted',
-    title: 'CLASIFICACIÓN',
-    subtitle: 'Qualy y orden oficial',
-    rule: 'Todos los pilotos asignados con qualyTime'
-  },
-  {
-    key: 'teamsGenerated',
-    title: 'EQUIPOS',
-    subtitle: 'Generación de equipos',
-    rule: 'Cantidad de equipos configurada para el evento'
-  },
-  {
-    key: 'race1Completed',
-    title: 'CARRERA 1',
-    subtitle: 'Parrilla y resultado oficial',
-    rule: 'Todos los pilotos con race1Points definidos'
-  },
-  {
-    key: 'race2Completed',
-    title: 'CARRERA 2',
-    subtitle: 'Parrilla y resultado oficial',
-    rule: 'Todos los pilotos con race2Points definidos'
-  },
-  {
-    key: 'resultsFinalized',
-    title: 'RESULTADOS',
-    subtitle: 'Puntuación y clasificaciones',
-    rule: 'Todos los pilotos con totalPoints > 0'
-  },
-  {
-    key: 'eventClosed',
-    title: 'EVENTO CERRADO',
-    subtitle: 'Cierre operativo del evento',
-    rule: 'Todas las fases anteriores completadas'
-  }
-];
 
 export default function EventStatusPage() {
   const { activeEventId, isHydrated: activeEventHydrated } = useActiveEvent();
@@ -284,75 +217,28 @@ export default function EventStatusPage() {
     };
   }, [assignedQualyPilotIds, pilots, qualyTimesByPilot, race1PointsByPilot, race2PointsByPilot, sessions, teams, eventConfig?.teamsCount]);
 
-  const progressByPhase = useMemo<Record<PhaseKey, boolean>>(
-    () => ({
-      timeAttackCompleted:
-        sessions.some((session) => session.status === 'closed' || session.assignedPilots.length > 0 || session.times.length > 0),
-      qualyCompleted:
-        assignedQualyPilotIds.length > 0 && assignedQualyPilotIds.some((pilotId) => qualyTimesByPilot.has(pilotId)),
-      teamsGenerated: teams.length > 0,
-      race1Completed: results.race1.entries.length > 0,
-      race2Completed: results.race2.entries.length > 0,
-      resultsFinalized: pilots.some((pilot) => {
-        const race1 = race1PointsByPilot.get(pilot.id) ?? 0;
-        const race2 = race2PointsByPilot.get(pilot.id) ?? 0;
-        return race1 + race2 > 0;
-      }),
-      eventClosed:
-        status.timeAttackCompleted ||
-        status.qualyCompleted ||
-        status.teamsGenerated ||
-        status.race1Completed ||
-        status.race2Completed ||
-        status.resultsFinalized
-    }),
-    [assignedQualyPilotIds, pilots, qualyTimesByPilot, race1PointsByPilot, race2PointsByPilot, results, sessions, status, teams]
-  );
+  const raceCount = useMemo(() => {
+    const fromConfig = sanitizePositive(eventConfig?.raceCount, 0);
+    if (fromConfig > 0) {
+      return fromConfig;
+    }
 
-  const prerequisitesByPhase = useMemo<Record<PhaseKey, Array<PhaseKey>>>(
-    () => ({
-      timeAttackCompleted: [],
-      qualyCompleted: ['timeAttackCompleted'],
-      teamsGenerated: ['qualyCompleted'],
-      race1Completed: ['teamsGenerated'],
-      race2Completed: ['race1Completed'],
-      resultsFinalized: ['race1Completed', 'race2Completed'],
-      eventClosed: ['timeAttackCompleted', 'qualyCompleted', 'teamsGenerated', 'race1Completed', 'race2Completed', 'resultsFinalized']
-    }),
-    []
-  );
+    const parsed = parseRacesPayload(racesPayload);
+    if (parsed.length > 0) {
+      return parsed.length;
+    }
 
-  const visualStatusByPhase = useMemo<Record<PhaseKey, PhaseVisualStatus>>(() => {
-    const output = {} as Record<PhaseKey, PhaseVisualStatus>;
+    return 2;
+  }, [eventConfig?.raceCount, racesPayload]);
 
-    phaseConfig.forEach((phase) => {
-      if (status[phase.key]) {
-        output[phase.key] = 'completed';
-        return;
-      }
+  const manualPhases = useMemo<EventOperationalPhase[]>(() => {
+    const racePhases = Array.from({ length: raceCount }, (_, index) => `carrera-${index + 1}` as EventOperationalPhase);
+    return ['pre-evento', 'time-attack', 'qualy', 'equipos', ...racePhases, 'resultados', 'evento-cerrado'];
+  }, [raceCount]);
 
-      const prerequisites = prerequisitesByPhase[phase.key];
-      const prerequisitesMet = prerequisites.every((key) => status[key]);
-
-      if (progressByPhase[phase.key] || prerequisitesMet) {
-        output[phase.key] = 'in-progress';
-        return;
-      }
-
-      output[phase.key] = 'blocked';
-    });
-
-    return output;
-  }, [prerequisitesByPhase, progressByPhase, status]);
-
-  const completedCount = useMemo(
-    () => Object.values(status).filter(Boolean).length,
-    [status]
-  );
-
-  const automaticPhase = useMemo<EventOperationalPhase>(() => {
+  const automaticState = useMemo<{ phase: EventOperationalPhase; detail: string | null }>(() => {
     if (status.eventClosed) {
-      return 'evento-cerrado';
+      return { phase: 'evento-cerrado', detail: null };
     }
 
     const nowMinutes = getCurrentMinutes();
@@ -361,14 +247,16 @@ export default function EventStatusPage() {
         startTime: session.startTime,
         duration: session.duration
       })),
-      'time-attack'
+      'time-attack',
+      'TA'
     );
     const qualyWindows = buildSessionWindows(
       qualySessions.map((session) => ({
         startTime: session.startTime,
         duration: session.duration
       })),
-      'qualy'
+      'qualy',
+      'Qualy'
     );
     const raceWindows = buildRaceWindows(racesPayload);
 
@@ -376,40 +264,141 @@ export default function EventStatusPage() {
 
     const activeWindow = allWindows.find((window) => nowMinutes >= window.start && nowMinutes < window.end);
     if (activeWindow) {
-      return activeWindow.phase;
+      return { phase: activeWindow.phase, detail: activeWindow.label };
     }
 
     if (status.qualyCompleted && !status.teamsGenerated) {
-      return 'equipos';
+      return { phase: 'equipos', detail: null };
     }
 
-    if (status.race2Completed || status.resultsFinalized || results.race1.entries.length > 0 || results.race2.entries.length > 0) {
-      return 'resultados';
+    if (status.resultsFinalized || results.race1.entries.length > 0 || results.race2.entries.length > 0) {
+      return { phase: 'resultados', detail: null };
     }
 
     if (status.race1Completed && !status.race2Completed) {
-      return 'carrera-2';
+      return { phase: 'carrera-2', detail: 'Carrera 2' };
     }
 
     if (status.teamsGenerated && !status.race1Completed) {
-      return 'carrera-1';
+      return { phase: 'carrera-1', detail: 'Carrera 1' };
     }
 
     const earliestStart = allWindows.length > 0 ? allWindows[0].start : null;
     if (typeof earliestStart === 'number' && nowMinutes < earliestStart) {
-      return 'pre-evento';
+      return { phase: 'pre-evento', detail: null };
     }
 
     if (status.timeAttackCompleted && !status.qualyCompleted) {
-      return 'qualy';
+      return { phase: 'qualy', detail: null };
     }
 
-    return 'pre-evento';
+    return { phase: 'pre-evento', detail: null };
   }, [qualySessions, results.race1.entries.length, results.race2.entries.length, sessions, status, racesPayload]);
 
-  const activeOperationalPhase = statusControl.mode === 'manual' ? statusControl.manualPhase : automaticPhase;
+  const activeOperationalPhase = statusControl.mode === 'manual' ? statusControl.manualPhase : automaticState.phase;
+  const activeOperationalDetail = statusControl.mode === 'manual' ? null : automaticState.detail;
   const sourceLabel = statusControl.mode === 'manual' ? 'Manual' : 'Automático por horario';
   const canEditControl = isStatusControlHydrated && activeEventHydrated;
+
+  const normalizedManualPhase = useMemo(() => {
+    if (manualPhases.includes(statusControl.manualPhase)) {
+      return statusControl.manualPhase;
+    }
+    return 'pre-evento' as EventOperationalPhase;
+  }, [manualPhases, statusControl.manualPhase]);
+
+  useEffect(() => {
+    if (statusControl.mode !== 'manual') {
+      return;
+    }
+
+    if (statusControl.manualPhase === normalizedManualPhase) {
+      return;
+    }
+
+    setStatusControl((prev) => ({ ...prev, manualPhase: normalizedManualPhase }));
+  }, [normalizedManualPhase, statusControl.manualPhase, statusControl.mode]);
+
+  const phaseCards = useMemo<PhaseCard[]>(() => {
+    const raceCards = Array.from({ length: raceCount }, (_, index) => ({
+      key: `race-${index + 1}`,
+      phase: `carrera-${index + 1}` as EventOperationalPhase,
+      title: `CARRERA ${index + 1}`,
+      subtitle: 'Parrilla y resultado oficial',
+      rule: `Cargar y validar resultados de Carrera ${index + 1}`
+    }));
+
+    return [
+      {
+        key: 'pre-evento',
+        phase: 'pre-evento',
+        title: 'PRE-EVENTO',
+        subtitle: 'Preparación del evento',
+        rule: 'Configuración general y módulos listos'
+      },
+      {
+        key: 'time-attack',
+        phase: 'time-attack',
+        title: 'TIME ATTACK',
+        subtitle: 'Sesiones y cronometraje inicial',
+        rule: `Sesiones TA configuradas (${sessions.length})`
+      },
+      {
+        key: 'qualy',
+        phase: 'qualy',
+        title: 'QUALY',
+        subtitle: 'Clasificación oficial',
+        rule: `Sesiones Qualy configuradas (${qualySessions.length})`
+      },
+      {
+        key: 'equipos',
+        phase: 'equipos',
+        title: 'EQUIPOS',
+        subtitle: 'Generación de equipos',
+        rule: `Equipos requeridos: ${eventConfig?.teamsCount ?? teams.length}`
+      },
+      ...raceCards,
+      {
+        key: 'resultados',
+        phase: 'resultados',
+        title: 'RESULTADOS',
+        subtitle: 'Puntuación y clasificaciones',
+        rule: 'Consolidar standings del evento'
+      },
+      {
+        key: 'evento-cerrado',
+        phase: 'evento-cerrado',
+        title: 'EVENTO CERRADO',
+        subtitle: 'Cierre operativo',
+        rule: 'Todas las fases previas completadas'
+      }
+    ];
+  }, [eventConfig?.teamsCount, qualySessions.length, raceCount, sessions.length, teams.length]);
+
+  const visualStatusByPhase = useMemo<Record<string, PhaseVisualStatus>>(() => {
+    const output: Record<string, PhaseVisualStatus> = {};
+    const activeIndex = phaseCards.findIndex((card) => card.phase === activeOperationalPhase);
+
+    phaseCards.forEach((card, index) => {
+      if (index < activeIndex) {
+        output[card.key] = 'completed';
+        return;
+      }
+
+      if (index === activeIndex) {
+        output[card.key] = card.phase === 'evento-cerrado' ? 'completed' : 'in-progress';
+        return;
+      }
+
+      output[card.key] = 'blocked';
+    });
+
+    return output;
+  }, [activeOperationalPhase, phaseCards]);
+
+  const completedCount = useMemo(() => {
+    return Object.values(visualStatusByPhase).filter((value) => value === 'completed').length;
+  }, [visualStatusByPhase]);
 
   return (
     <main className="min-h-screen bg-gp-bg text-white">
@@ -444,11 +433,14 @@ export default function EventStatusPage() {
                   <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                     <div className="rounded-lg border border-white/10 bg-white/[0.03] px-4 py-3">
                       <p className="text-[11px] uppercase tracking-[0.12em] text-gp-textSoft">Fases completadas</p>
-                      <p className="mt-1 text-lg font-semibold text-white">{completedCount} / {phaseConfig.length}</p>
+                      <p className="mt-1 text-lg font-semibold text-white">{completedCount} / {phaseCards.length}</p>
                     </div>
                     <div className="rounded-lg border border-white/10 bg-white/[0.03] px-4 py-3">
                       <p className="text-[11px] uppercase tracking-[0.12em] text-gp-textSoft">Estado operativo actual</p>
-                      <p className="mt-1 text-lg font-semibold text-cyan-200">{OPERATIONAL_PHASE_LABEL[activeOperationalPhase]}</p>
+                      <p className="mt-1 text-lg font-semibold text-cyan-200">{labelForOperationalPhase(activeOperationalPhase)}</p>
+                      {activeOperationalDetail ? (
+                        <p className="mt-1 text-[11px] uppercase tracking-[0.11em] text-white/60">{activeOperationalDetail}</p>
+                      ) : null}
                     </div>
                     <div className="rounded-lg border border-white/10 bg-white/[0.03] px-4 py-3">
                       <p className="text-[11px] uppercase tracking-[0.12em] text-gp-textSoft">Fuente de estado</p>
@@ -494,7 +486,7 @@ export default function EventStatusPage() {
                       <div className="mt-3 space-y-2">
                         <p className="text-[11px] uppercase tracking-[0.11em] text-white/60">Selecciona el estado manual del evento:</p>
                         <div className="flex flex-wrap gap-2">
-                          {MANUAL_PHASES.map((phase) => (
+                          {manualPhases.map((phase) => (
                             <button
                               key={phase}
                               type="button"
@@ -506,7 +498,7 @@ export default function EventStatusPage() {
                                   : 'border-white/15 bg-black/20 text-gp-textSoft hover:bg-white/10'
                               }`}
                             >
-                              {OPERATIONAL_PHASE_LABEL[phase]}
+                              {labelForOperationalPhase(phase)}
                             </button>
                           ))}
                         </div>
@@ -518,9 +510,8 @@ export default function EventStatusPage() {
                 </article>
 
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                  {phaseConfig.map((phase, index) => {
-                    const completed = status[phase.key];
-                    const visualStatus = visualStatusByPhase[phase.key];
+                  {phaseCards.map((phase, index) => {
+                    const visualStatus = visualStatusByPhase[phase.key] ?? 'blocked';
                     const statusLabel =
                       visualStatus === 'completed'
                         ? '🟢 COMPLETADO'
@@ -615,7 +606,19 @@ function normalizeStatusControl(value: unknown): EventStatusControl {
 }
 
 function isOperationalPhase(value: unknown): value is EventOperationalPhase {
-  return typeof value === 'string' && MANUAL_PHASES.includes(value as EventOperationalPhase);
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  return (
+    value === 'pre-evento' ||
+    value === 'time-attack' ||
+    value === 'qualy' ||
+    value === 'equipos' ||
+    value === 'resultados' ||
+    value === 'evento-cerrado' ||
+    /^carrera-\d+$/.test(value)
+  );
 }
 
 function getCurrentMinutes() {
@@ -625,10 +628,13 @@ function getCurrentMinutes() {
 
 function buildSessionWindows(
   sessions: Array<{ startTime: unknown; duration: unknown }>,
-  phase: EventOperationalPhase
+  phase: EventOperationalPhase,
+  labelPrefix: string
 ): TimeWindow[] {
+  const total = sessions.length;
+
   return sessions
-    .map((session) => {
+    .map((session, index) => {
       const start = parseTimeToMinutes(session.startTime);
       const duration = toPositiveMinutes(session.duration);
       if (start === null || duration === null) {
@@ -638,7 +644,8 @@ function buildSessionWindows(
       return {
         phase,
         start,
-        end: Math.min(start + duration, 24 * 60)
+        end: Math.min(start + duration, 24 * 60),
+        label: `${labelPrefix} ${index + 1}${total > 0 ? ` de ${total}` : ''}`
       } satisfies TimeWindow;
     })
     .filter((window): window is TimeWindow => Boolean(window));
@@ -659,20 +666,72 @@ function buildRaceWindows(value: unknown): TimeWindow[] {
 
   const windows: TimeWindow[] = [];
 
-  races.slice(0, 2).forEach((race, index) => {
+  const total = races.length;
+
+  races.forEach((race, index) => {
     const start = parseTimeToMinutes(race?.startTime);
     if (start === null) {
       return;
     }
 
     windows.push({
-      phase: index === 0 ? 'carrera-1' : 'carrera-2',
+      phase: `carrera-${index + 1}`,
       start,
-      end: Math.min(start + raceInterval, 24 * 60)
+      end: Math.min(start + raceInterval, 24 * 60),
+      label: `Carrera ${index + 1}${total > 0 ? ` de ${total}` : ''}`
     });
   });
 
   return windows;
+}
+
+function parseRacesPayload(value: unknown): Array<{ startTime?: unknown }> {
+  if (!value || typeof value !== 'object') {
+    return [];
+  }
+
+  const payload = value as { races?: Array<{ startTime?: unknown }> };
+  return Array.isArray(payload.races) ? payload.races : [];
+}
+
+function sanitizePositive(value: unknown, fallback: number) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return fallback;
+  }
+
+  return Math.floor(value);
+}
+
+function labelForOperationalPhase(phase: EventOperationalPhase) {
+  if (phase === 'pre-evento') {
+    return 'Pre-evento';
+  }
+
+  if (phase === 'time-attack') {
+    return 'Time Attack';
+  }
+
+  if (phase === 'qualy') {
+    return 'Qualy';
+  }
+
+  if (phase === 'equipos') {
+    return 'Equipos';
+  }
+
+  if (phase === 'resultados') {
+    return 'Resultados';
+  }
+
+  if (phase === 'evento-cerrado') {
+    return 'Evento cerrado';
+  }
+
+  if (/^carrera-\d+$/.test(phase)) {
+    return `Carrera ${phase.split('-')[1]}`;
+  }
+
+  return 'Estado';
 }
 
 function parseTimeToMinutes(value: unknown): number | null {
