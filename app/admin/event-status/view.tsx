@@ -657,22 +657,24 @@ function buildSessionWindows(
 ): TimeWindow[] {
   const total = sessions.length;
 
-  return sessions
-    .map((session, index) => {
-      const start = parseTimeToMinutes(session.startTime);
-      const duration = toPositiveMinutes(session.duration);
-      if (start === null || duration === null) {
-        return null;
-      }
+  const windows: TimeWindow[] = [];
 
-      return {
-        phase: `${phasePrefix}-${index + 1}`,
-        start,
-        end: Math.min(start + duration, 24 * 60),
-        label: `${labelPrefix} ${index + 1}${total > 0 ? ` de ${total}` : ''}`
-      } satisfies TimeWindow;
-    })
-    .filter((window): window is TimeWindow => Boolean(window));
+  sessions.forEach((session, index) => {
+    const start = parseTimeToMinutes(session.startTime);
+    const duration = toPositiveMinutes(session.duration);
+    if (start === null || duration === null) {
+      return;
+    }
+
+    windows.push({
+      phase: `${phasePrefix}-${index + 1}`,
+      start,
+      end: Math.min(start + duration, 24 * 60),
+      label: `${labelPrefix} ${index + 1}${total > 0 ? ` de ${total}` : ''}`
+    });
+  });
+
+  return windows;
 }
 
 function buildRaceWindows(value: unknown): TimeWindow[] {
