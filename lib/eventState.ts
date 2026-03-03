@@ -41,7 +41,8 @@ export type EventModuleKey =
   | 'races'
   | 'results'
   | 'raffles'
-  | 'rafflesHistory';
+  | 'rafflesHistory'
+  | 'eventStatus';
 
 export async function getEventModulePayload(eventId: string, moduleKey: EventModuleKey): Promise<unknown | null> {
   await ensureEventStateTables();

@@ -8,6 +8,7 @@ import { useActiveEvent } from '@/context/ActiveEventContext';
 import { useClassification } from '@/context/ClassificationContext';
 import { usePilots } from '@/context/PilotsContext';
 import { useTimeAttackSessions } from '@/context/TimeAttackContext';
+import { loadModuleState, saveModuleState } from '@/lib/eventStateClient';
 import { EMPTY_RACE_RESULT, normalizeRaceResult, type StoredResults, type TeamRecord } from '@/lib/resultsEngine';
 import { useEventRuntimeConfig } from '@/lib/event-client';
 import { getResultsSnapshotByEventAction, getTeamsByEventAction } from '@/app/admin/events/[eventId]/actions';
@@ -32,10 +33,60 @@ type PhaseConfig = {
   rule: string;
 };
 
+type EventStatusMode = 'automatic' | 'manual';
+
+type EventOperationalPhase =
+  | 'pre-evento'
+  | 'time-attack'
+  | 'qualy'
+  | 'equipos'
+  | 'carrera-1'
+  | 'carrera-2'
+  | 'resultados'
+  | 'evento-cerrado';
+
+type EventStatusControl = {
+  mode: EventStatusMode;
+  manualPhase: EventOperationalPhase;
+};
+
+type TimeWindow = {
+  phase: EventOperationalPhase;
+  start: number;
+  end: number;
+};
+
 const EMPTY_RESULTS: StoredResults = {
   race1: EMPTY_RACE_RESULT,
   race2: EMPTY_RACE_RESULT
 };
+
+const DEFAULT_STATUS_CONTROL: EventStatusControl = {
+  mode: 'automatic',
+  manualPhase: 'pre-evento'
+};
+
+const OPERATIONAL_PHASE_LABEL: Record<EventOperationalPhase, string> = {
+  'pre-evento': 'Pre-evento',
+  'time-attack': 'Time Attack',
+  qualy: 'Qualy',
+  equipos: 'Equipos',
+  'carrera-1': 'Carrera 1',
+  'carrera-2': 'Carrera 2',
+  resultados: 'Resultados',
+  'evento-cerrado': 'Evento cerrado'
+};
+
+const MANUAL_PHASES: EventOperationalPhase[] = [
+  'pre-evento',
+  'time-attack',
+  'qualy',
+  'equipos',
+  'carrera-1',
+  'carrera-2',
+  'resultados',
+  'evento-cerrado'
+];
 
 const phaseConfig: PhaseConfig[] = [
   {
@@ -92,6 +143,9 @@ export default function EventStatusPage() {
   const [teams, setTeams] = useState<TeamRecord[]>([]);
   const [results, setResults] = useState<StoredResults>(EMPTY_RESULTS);
   const [isStorageHydrated, setIsStorageHydrated] = useState(false);
+  const [statusControl, setStatusControl] = useState<EventStatusControl>(DEFAULT_STATUS_CONTROL);
+  const [isStatusControlHydrated, setIsStatusControlHydrated] = useState(false);
+  const [racesPayload, setRacesPayload] = useState<unknown>(null);
 
   const eventConfig = useMemo(() => runtimeConfig, [runtimeConfig]);
 
@@ -120,6 +174,39 @@ export default function EventStatusPage() {
       }
     })();
   }, [activeEventHydrated, activeEventId]);
+
+  useEffect(() => {
+    if (!activeEventHydrated) {
+      return;
+    }
+
+    setIsStatusControlHydrated(false);
+
+    void (async () => {
+      try {
+        const [storedControl, storedRaces] = await Promise.all([
+          loadModuleState<unknown>(activeEventId, 'eventStatus', null),
+          loadModuleState<unknown>(activeEventId, 'races', null)
+        ]);
+
+        setStatusControl(normalizeStatusControl(storedControl));
+        setRacesPayload(storedRaces);
+      } catch {
+        setStatusControl(DEFAULT_STATUS_CONTROL);
+        setRacesPayload(null);
+      } finally {
+        setIsStatusControlHydrated(true);
+      }
+    })();
+  }, [activeEventHydrated, activeEventId]);
+
+  useEffect(() => {
+    if (!activeEventHydrated || !isStatusControlHydrated) {
+      return;
+    }
+
+    void saveModuleState(activeEventId, 'eventStatus', statusControl);
+  }, [activeEventHydrated, activeEventId, isStatusControlHydrated, statusControl]);
 
   const isHydrated = pilotsHydrated && timeAttackHydrated && qualyHydrated && activeEventHydrated && isStorageHydrated;
 
@@ -263,6 +350,67 @@ export default function EventStatusPage() {
     [status]
   );
 
+  const automaticPhase = useMemo<EventOperationalPhase>(() => {
+    if (status.eventClosed) {
+      return 'evento-cerrado';
+    }
+
+    const nowMinutes = getCurrentMinutes();
+    const taWindows = buildSessionWindows(
+      sessions.map((session) => ({
+        startTime: session.startTime,
+        duration: session.duration
+      })),
+      'time-attack'
+    );
+    const qualyWindows = buildSessionWindows(
+      qualySessions.map((session) => ({
+        startTime: session.startTime,
+        duration: session.duration
+      })),
+      'qualy'
+    );
+    const raceWindows = buildRaceWindows(racesPayload);
+
+    const allWindows = [...taWindows, ...qualyWindows, ...raceWindows].sort((a, b) => a.start - b.start);
+
+    const activeWindow = allWindows.find((window) => nowMinutes >= window.start && nowMinutes < window.end);
+    if (activeWindow) {
+      return activeWindow.phase;
+    }
+
+    if (status.qualyCompleted && !status.teamsGenerated) {
+      return 'equipos';
+    }
+
+    if (status.race2Completed || status.resultsFinalized || results.race1.entries.length > 0 || results.race2.entries.length > 0) {
+      return 'resultados';
+    }
+
+    if (status.race1Completed && !status.race2Completed) {
+      return 'carrera-2';
+    }
+
+    if (status.teamsGenerated && !status.race1Completed) {
+      return 'carrera-1';
+    }
+
+    const earliestStart = allWindows.length > 0 ? allWindows[0].start : null;
+    if (typeof earliestStart === 'number' && nowMinutes < earliestStart) {
+      return 'pre-evento';
+    }
+
+    if (status.timeAttackCompleted && !status.qualyCompleted) {
+      return 'qualy';
+    }
+
+    return 'pre-evento';
+  }, [qualySessions, results.race1.entries.length, results.race2.entries.length, sessions, status, racesPayload]);
+
+  const activeOperationalPhase = statusControl.mode === 'manual' ? statusControl.manualPhase : automaticPhase;
+  const sourceLabel = statusControl.mode === 'manual' ? 'Manual' : 'Automático por horario';
+  const canEditControl = isStatusControlHydrated && activeEventHydrated;
+
   return (
     <main className="min-h-screen bg-gp-bg text-white">
       <div className="flex min-h-screen flex-col lg:flex-row">
@@ -299,13 +447,71 @@ export default function EventStatusPage() {
                       <p className="mt-1 text-lg font-semibold text-white">{completedCount} / {phaseConfig.length}</p>
                     </div>
                     <div className="rounded-lg border border-white/10 bg-white/[0.03] px-4 py-3">
-                      <p className="text-[11px] uppercase tracking-[0.12em] text-gp-textSoft">Estado operativo</p>
-                      <p className="mt-1 text-lg font-semibold text-cyan-200">{status.eventClosed ? 'Evento cerrado' : 'En progreso'}</p>
+                      <p className="text-[11px] uppercase tracking-[0.12em] text-gp-textSoft">Estado operativo actual</p>
+                      <p className="mt-1 text-lg font-semibold text-cyan-200">{OPERATIONAL_PHASE_LABEL[activeOperationalPhase]}</p>
                     </div>
                     <div className="rounded-lg border border-white/10 bg-white/[0.03] px-4 py-3">
                       <p className="text-[11px] uppercase tracking-[0.12em] text-gp-textSoft">Fuente de estado</p>
-                      <p className="mt-1 text-lg font-semibold text-white">Cálculo automático</p>
+                      <p className="mt-1 text-lg font-semibold text-white">{sourceLabel}</p>
                     </div>
+                  </div>
+
+                  <div className="mt-4 rounded-lg border border-white/10 bg-white/[0.03] p-4">
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-gp-textSoft">Modo de control</p>
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={!canEditControl}
+                        onClick={() => setStatusControl((prev) => ({ ...prev, mode: 'automatic' }))}
+                        className={`rounded-lg border px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                          statusControl.mode === 'automatic'
+                            ? 'border-gp-telemetryBlue/60 bg-gp-telemetryBlue/20 text-cyan-200'
+                            : 'border-white/15 bg-black/20 text-gp-textSoft hover:bg-white/10'
+                        }`}
+                      >
+                        Automático
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!canEditControl}
+                        onClick={() => setStatusControl((prev) => ({ ...prev, mode: 'manual' }))}
+                        className={`rounded-lg border px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                          statusControl.mode === 'manual'
+                            ? 'border-gp-telemetryBlue/60 bg-gp-telemetryBlue/20 text-cyan-200'
+                            : 'border-white/15 bg-black/20 text-gp-textSoft hover:bg-white/10'
+                        }`}
+                      >
+                        Manual
+                      </button>
+                    </div>
+
+                    {statusControl.mode === 'automatic' ? (
+                      <p className="mt-3 text-[11px] uppercase tracking-[0.11em] text-white/60">
+                        El estado se actualiza según las horas configuradas de Time Attack, Qualy y Carreras.
+                      </p>
+                    ) : (
+                      <div className="mt-3 space-y-2">
+                        <p className="text-[11px] uppercase tracking-[0.11em] text-white/60">Selecciona el estado manual del evento:</p>
+                        <div className="flex flex-wrap gap-2">
+                          {MANUAL_PHASES.map((phase) => (
+                            <button
+                              key={phase}
+                              type="button"
+                              disabled={!canEditControl}
+                              onClick={() => setStatusControl((prev) => ({ ...prev, manualPhase: phase }))}
+                              className={`rounded-lg border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.11em] transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                                statusControl.manualPhase === phase
+                                  ? 'border-gp-stateGreen/60 bg-gp-stateGreen/15 text-green-200'
+                                  : 'border-white/15 bg-black/20 text-gp-textSoft hover:bg-white/10'
+                              }`}
+                            >
+                              {OPERATIONAL_PHASE_LABEL[phase]}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="mt-4 h-px w-full bg-gradient-to-r from-gp-racingRed/80 via-gp-telemetryBlue/55 to-transparent" />
@@ -391,4 +597,107 @@ function normalizeTeams(value: unknown): TeamRecord[] {
       name: entry.name,
       members: Array.from(new Set(entry.members.filter((pilotId): pilotId is string => typeof pilotId === 'string')))
     }));
+}
+
+function normalizeStatusControl(value: unknown): EventStatusControl {
+  if (!value || typeof value !== 'object') {
+    return DEFAULT_STATUS_CONTROL;
+  }
+
+  const payload = value as Partial<EventStatusControl>;
+  const mode: EventStatusMode = payload.mode === 'manual' ? 'manual' : 'automatic';
+  const manualPhase = isOperationalPhase(payload.manualPhase) ? payload.manualPhase : DEFAULT_STATUS_CONTROL.manualPhase;
+
+  return {
+    mode,
+    manualPhase
+  };
+}
+
+function isOperationalPhase(value: unknown): value is EventOperationalPhase {
+  return typeof value === 'string' && MANUAL_PHASES.includes(value as EventOperationalPhase);
+}
+
+function getCurrentMinutes() {
+  const now = new Date();
+  return now.getHours() * 60 + now.getMinutes();
+}
+
+function buildSessionWindows(
+  sessions: Array<{ startTime: unknown; duration: unknown }>,
+  phase: EventOperationalPhase
+): TimeWindow[] {
+  return sessions
+    .map((session) => {
+      const start = parseTimeToMinutes(session.startTime);
+      const duration = toPositiveMinutes(session.duration);
+      if (start === null || duration === null) {
+        return null;
+      }
+
+      return {
+        phase,
+        start,
+        end: Math.min(start + duration, 24 * 60)
+      } satisfies TimeWindow;
+    })
+    .filter((window): window is TimeWindow => Boolean(window));
+}
+
+function buildRaceWindows(value: unknown): TimeWindow[] {
+  if (!value || typeof value !== 'object') {
+    return [];
+  }
+
+  const payload = value as {
+    config?: { raceIntervalMinutes?: unknown };
+    races?: Array<{ startTime?: unknown }>;
+  };
+
+  const raceInterval = toPositiveMinutes(payload.config?.raceIntervalMinutes) ?? 20;
+  const races = Array.isArray(payload.races) ? payload.races : [];
+
+  return races
+    .slice(0, 2)
+    .map((race, index) => {
+      const start = parseTimeToMinutes(race?.startTime);
+      if (start === null) {
+        return null;
+      }
+
+      return {
+        phase: index === 0 ? 'carrera-1' : 'carrera-2',
+        start,
+        end: Math.min(start + raceInterval, 24 * 60)
+      } satisfies TimeWindow;
+    })
+    .filter((window): window is TimeWindow => Boolean(window));
+}
+
+function parseTimeToMinutes(value: unknown): number | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const clean = value.trim();
+  if (!/^\d{2}:\d{2}$/.test(clean)) {
+    return null;
+  }
+
+  const [hoursText, minutesText] = clean.split(':');
+  const hours = Number(hoursText);
+  const minutes = Number(minutesText);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+    return null;
+  }
+
+  return hours * 60 + minutes;
+}
+
+function toPositiveMinutes(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+
+  return Math.floor(value);
 }
