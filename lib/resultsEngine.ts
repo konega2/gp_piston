@@ -98,9 +98,22 @@ export function computeRaceResults(
   rows: Array<{
     pilot: RacePilot & { category: RaceCategory };
     finalPosition: number;
-  }>
+  }>,
+  options?: { calculatedAt?: string | null }
 ): RaceComputedResult {
-  const ordered = [...rows].sort((a, b) => a.finalPosition - b.finalPosition);
+  const ordered = [...rows].sort((a, b) => {
+    const finalPosDelta = a.finalPosition - b.finalPosition;
+    if (finalPosDelta !== 0) {
+      return finalPosDelta;
+    }
+
+    const numberDelta = a.pilot.numeroPiloto - b.pilot.numeroPiloto;
+    if (numberDelta !== 0) {
+      return numberDelta;
+    }
+
+    return a.pilot.pilotId.localeCompare(b.pilot.pilotId);
+  });
   const generalWinner = ordered[0] ?? null;
   const winningCategory = generalWinner?.pilot.category ?? null;
 
@@ -147,7 +160,7 @@ export function computeRaceResults(
     generalWinnerPilotId: generalWinner?.pilot.pilotId ?? null,
     winningCategory,
     oppositeCategoryFirstPilotId: firstOpposite?.pilot.pilotId ?? null,
-    calculatedAt: new Date().toISOString()
+    calculatedAt: options?.calculatedAt ?? null
   };
 }
 
@@ -208,11 +221,35 @@ export function buildTeamStandings(results: StoredResults, teams: TeamRecord[]):
         teamId: team.id,
         teamName: team.name,
         totalPoints: breakdown.reduce((acc, item) => acc + item.totalPoints, 0),
-        breakdown
+        breakdown: breakdown.sort((a, b) => {
+          const pointsDelta = b.totalPoints - a.totalPoints;
+          if (pointsDelta !== 0) {
+            return pointsDelta;
+          }
+
+          const numberDelta = a.numeroPiloto - b.numeroPiloto;
+          if (numberDelta !== 0) {
+            return numberDelta;
+          }
+
+          return a.pilotId.localeCompare(b.pilotId);
+        })
       };
     })
     .filter((item) => item.breakdown.length > 0)
-    .sort((a, b) => b.totalPoints - a.totalPoints);
+    .sort((a, b) => {
+      const pointsDelta = b.totalPoints - a.totalPoints;
+      if (pointsDelta !== 0) {
+        return pointsDelta;
+      }
+
+      const nameDelta = a.teamName.localeCompare(b.teamName);
+      if (nameDelta !== 0) {
+        return nameDelta;
+      }
+
+      return a.teamId.localeCompare(b.teamId);
+    });
 }
 
 export function normalizeRaceResult(value: unknown): RaceComputedResult {
@@ -235,7 +272,19 @@ export function normalizeRaceResult(value: unknown): RaceComputedResult {
     : [];
 
   return {
-    entries,
+    entries: entries.sort((a, b) => {
+      const finalPosDelta = a.finalPosition - b.finalPosition;
+      if (finalPosDelta !== 0) {
+        return finalPosDelta;
+      }
+
+      const numberDelta = a.numeroPiloto - b.numeroPiloto;
+      if (numberDelta !== 0) {
+        return numberDelta;
+      }
+
+      return a.pilotId.localeCompare(b.pilotId);
+    }),
     generalWinnerPilotId: typeof candidate.generalWinnerPilotId === 'string' ? candidate.generalWinnerPilotId : null,
     winningCategory: candidate.winningCategory === '390cc' || candidate.winningCategory === '270cc' ? candidate.winningCategory : null,
     oppositeCategoryFirstPilotId:

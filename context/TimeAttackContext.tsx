@@ -481,7 +481,29 @@ function normalizeSessions(
       };
     });
 
-  return normalizedStored.length > 0 ? normalizedStored : defaults;
+  if (normalizedStored.length === 0) {
+    return defaults;
+  }
+
+  const sortedStored = sortSessions(normalizedStored);
+
+  return defaults.map((defaultSession, index) => {
+    const storedSession = sortedStored[index];
+    if (!storedSession) {
+      return defaultSession;
+    }
+
+    const safeAssignedPilots = storedSession.assignedPilots.slice(0, storedSession.maxCapacity);
+    const safeTimes = storedSession.times.filter((time) => safeAssignedPilots.includes(time.pilotId));
+
+    return {
+      ...storedSession,
+      name: defaultSession.name,
+      assignedPilots: safeAssignedPilots,
+      times: safeTimes,
+      status: safeAssignedPilots.length > 0 && safeTimes.length === safeAssignedPilots.length ? 'closed' : 'pending'
+    };
+  });
 }
 
 function recalculateCorrectedTimes(list: TimeAttackSession[]): TimeAttackSession[] {

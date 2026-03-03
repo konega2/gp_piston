@@ -8,9 +8,9 @@ import { useActiveEvent } from '@/context/ActiveEventContext';
 import { useClassification } from '@/context/ClassificationContext';
 import { usePilots } from '@/context/PilotsContext';
 import { useTimeAttackSessions } from '@/context/TimeAttackContext';
-import { loadModuleState } from '@/lib/eventStateClient';
 import { buildCombinedStandings } from '@/lib/combinedStandings';
 import { useEventInfo } from '@/lib/event-client';
+import { getResultsSnapshotByEventAction, getTeamsByEventAction } from '@/app/admin/events/[eventId]/actions';
 import {
   EMPTY_RACE_RESULT,
   buildIndividualStandings,
@@ -70,10 +70,7 @@ export default function AdminDashboardPage() {
 
     void (async () => {
       try {
-        const [teamsPayload, parsedResults] = await Promise.all([
-          loadModuleState<unknown>(activeEventId, 'teams', []),
-          loadModuleState<Partial<StoredResults>>(activeEventId, 'results', EMPTY_RESULTS)
-        ]);
+        const [teamsPayload, parsedResults] = await Promise.all([getTeamsByEventAction(activeEventId), getResultsSnapshotByEventAction(activeEventId)]);
 
         setTeams(normalizeTeams(teamsPayload));
         setResults({

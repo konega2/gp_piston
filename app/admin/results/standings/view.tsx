@@ -6,6 +6,7 @@ import { Header } from '@/components/layout/Header';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { useActiveEvent } from '@/context/ActiveEventContext';
 import { loadModuleState } from '@/lib/eventStateClient';
+import { getResultsSnapshotByEventAction, getTeamsByEventAction } from '@/app/admin/events/[eventId]/actions';
 import {
   EMPTY_RACE_RESULT,
   buildIndividualStandings,
@@ -39,10 +40,7 @@ export default function ResultsStandingsPage() {
 
     void (async () => {
       try {
-        const parsedResults = await loadModuleState<StoredResults>(activeEventId, 'results', {
-          race1: EMPTY_RACE_RESULT,
-          race2: EMPTY_RACE_RESULT
-        });
+        const parsedResults = await getResultsSnapshotByEventAction(activeEventId);
         setResults({
           race1: normalizeRaceResult(parsedResults?.race1),
           race2: normalizeRaceResult(parsedResults?.race2)
@@ -54,7 +52,7 @@ export default function ResultsStandingsPage() {
           race2: isRaceGrid(parsedRaces?.race2) ? parsedRaces.race2 : null
         });
 
-        const parsedTeams = await loadModuleState<TeamRecord[]>(activeEventId, 'teams', []);
+        const parsedTeams = await getTeamsByEventAction(activeEventId);
         if (Array.isArray(parsedTeams)) {
           setTeams(
             parsedTeams

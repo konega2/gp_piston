@@ -545,7 +545,7 @@ function buildDefaultQualySessions(_pilots: PilotRecord[], groupsCount: number, 
 }
 
 function normalizeQualySessions(stored: unknown, pilots: PilotRecord[], groupsCount: number, maxParticipants: number): QualySession[] {
-  const effectiveGroupsCount = getEffectiveGroupsCount(groupsCount, Array.isArray(stored) ? (stored as LegacyQualySession[]) : []);
+  const effectiveGroupsCount = sanitizePositive(groupsCount, 1);
   const defaults = buildDefaultQualySessions(pilots, effectiveGroupsCount, maxParticipants);
   const availablePilotIds = new Set(pilots.map((pilot) => pilot.id));
   if (!Array.isArray(stored)) {

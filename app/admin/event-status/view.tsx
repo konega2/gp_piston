@@ -8,9 +8,9 @@ import { useActiveEvent } from '@/context/ActiveEventContext';
 import { useClassification } from '@/context/ClassificationContext';
 import { usePilots } from '@/context/PilotsContext';
 import { useTimeAttackSessions } from '@/context/TimeAttackContext';
-import { loadModuleState } from '@/lib/eventStateClient';
 import { EMPTY_RACE_RESULT, normalizeRaceResult, type StoredResults, type TeamRecord } from '@/lib/resultsEngine';
 import { useEventRuntimeConfig } from '@/lib/event-client';
+import { getResultsSnapshotByEventAction, getTeamsByEventAction } from '@/app/admin/events/[eventId]/actions';
 
 type EventPhaseState = {
   timeAttackCompleted: boolean;
@@ -104,10 +104,10 @@ export default function EventStatusPage() {
 
     void (async () => {
       try {
-        const parsedTeams = await loadModuleState<unknown>(activeEventId, 'teams', []);
+        const parsedTeams = await getTeamsByEventAction(activeEventId);
         setTeams(normalizeTeams(parsedTeams));
 
-        const parsedResults = await loadModuleState<Partial<StoredResults>>(activeEventId, 'results', EMPTY_RESULTS);
+        const parsedResults = await getResultsSnapshotByEventAction(activeEventId);
         setResults({
           race1: normalizeRaceResult(parsedResults?.race1),
           race2: normalizeRaceResult(parsedResults?.race2)

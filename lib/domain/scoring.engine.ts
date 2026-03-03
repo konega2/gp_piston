@@ -1,0 +1,20 @@
+export {
+  EMPTY_RACE_RESULT,
+  buildRaceRows,
+  computeRaceResults,
+  buildIndividualStandings,
+  buildTeamStandings,
+  normalizeRaceResult,
+  isRaceGrid,
+  type RaceKey,
+  type RaceCategory,
+  type RacePilot,
+  type RaceGroupGrid,
+  type RaceGrid,
+  type RaceResultEntry,
+  type RaceComputedResult,
+  type StoredResults,
+  type TeamRecord,
+  type IndividualStandingRow,
+  type TeamStandingRow
+} from '@/lib/resultsEngine';

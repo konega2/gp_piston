@@ -5,7 +5,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Header } from '@/components/layout/Header';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { useActiveEvent } from '@/context/ActiveEventContext';
-import { loadModuleState, saveModuleState } from '@/lib/eventStateClient';
+import { loadModuleState } from '@/lib/eventStateClient';
+import { getResultsSnapshotByEventAction, replaceResultsSnapshotByEventAction } from '@/app/admin/events/[eventId]/actions';
 import {
   EMPTY_RACE_RESULT,
   computeRaceResults,
@@ -58,10 +59,7 @@ export default function ResultsEditorPage() {
           race2: isRaceGrid(parsedRaces?.race2) ? parsedRaces.race2 : null
         });
 
-        const parsedResults = await loadModuleState<StoredResults>(activeEventId, 'results', {
-          race1: EMPTY_RACE_RESULT,
-          race2: EMPTY_RACE_RESULT
-        });
+        const parsedResults = await getResultsSnapshotByEventAction(activeEventId);
         setResults({
           race1: normalizeRaceResult(parsedResults?.race1),
           race2: normalizeRaceResult(parsedResults?.race2)
@@ -77,7 +75,28 @@ export default function ResultsEditorPage() {
       return;
     }
 
-    void saveModuleState(activeEventId, 'results', results);
+    void replaceResultsSnapshotByEventAction(activeEventId, {
+      race1: {
+        entries: results.race1.entries.map((entry) => ({
+          pilotId: entry.pilotId,
+          finalPosition: entry.finalPosition,
+          basePoints: entry.basePoints,
+          collectiveBonus: entry.collectiveBonus,
+          individualBonus: entry.individualBonus,
+          finalPoints: entry.finalPoints
+        }))
+      },
+      race2: {
+        entries: results.race2.entries.map((entry) => ({
+          pilotId: entry.pilotId,
+          finalPosition: entry.finalPosition,
+          basePoints: entry.basePoints,
+          collectiveBonus: entry.collectiveBonus,
+          individualBonus: entry.individualBonus,
+          finalPoints: entry.finalPoints
+        }))
+      }
+    });
   }, [isHydrated, results, activeEventHydrated, activeEventId]);
 
   useEffect(() => {

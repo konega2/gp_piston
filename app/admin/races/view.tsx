@@ -11,7 +11,7 @@ import { useTimeAttackSessions } from '@/context/TimeAttackContext';
 import { loadModuleState, saveModuleState } from '@/lib/eventStateClient';
 import { useEventRuntimeConfig } from '@/lib/event-client';
 import { buildCombinedStandings } from '@/lib/combinedStandings';
-import { updateEventRuntimeConfigAction } from '@/app/admin/events/[eventId]/actions';
+import { getTeamsByEventAction, updateEventRuntimeConfigAction } from '@/app/admin/events/[eventId]/actions';
 
 type RacePilot = {
   pilotId: string;
@@ -149,7 +149,7 @@ export default function RacesPage() {
 
     void (async () => {
       try {
-        const parsedTeams = await loadModuleState<TeamRecord[]>(activeEventId, 'teams', []);
+        const parsedTeams = await getTeamsByEventAction(activeEventId);
         if (Array.isArray(parsedTeams)) {
           setTeams(
             parsedTeams

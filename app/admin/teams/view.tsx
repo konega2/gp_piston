@@ -8,10 +8,10 @@ import { useActiveEvent } from '@/context/ActiveEventContext';
 import { useClassification } from '@/context/ClassificationContext';
 import { usePilots } from '@/context/PilotsContext';
 import { useTimeAttackSessions } from '@/context/TimeAttackContext';
-import { loadModuleState, saveModuleState } from '@/lib/eventStateClient';
 import { buildCombinedStandings } from '@/lib/combinedStandings';
 import type { PilotRecord } from '@/data/pilots';
 import { useEventRuntimeConfig } from '@/lib/event-client';
+import { getTeamsByEventAction, replaceTeamsByEventAction } from '@/app/admin/events/[eventId]/actions';
 
 type TeamRecord = {
   id: string;
@@ -70,7 +70,7 @@ export default function TeamsPage() {
 
     void (async () => {
       try {
-        const parsed = await loadModuleState<TeamRecord[]>(activeEventId, 'teams', []);
+        const parsed = await getTeamsByEventAction(activeEventId);
         if (!Array.isArray(parsed) || parsed.length === 0) {
           setTeams(createTeamPlaceholders(configuredTeamsCount));
           return;
@@ -87,7 +87,13 @@ export default function TeamsPage() {
             members: Array.from(new Set(entry.members.filter((pilotId): pilotId is string => typeof pilotId === 'string')))
           }));
 
-        setTeams(normalized.length > 0 ? normalized : createTeamPlaceholders(configuredTeamsCount));
+        if (normalized.length === 0) {
+          setTeams(createTeamPlaceholders(configuredTeamsCount));
+          return;
+        }
+
+        const effectiveCount = configuredTeamsCount > 0 ? configuredTeamsCount : normalized.length;
+        setTeams(resizeTeamsKeepingMembers(normalized, effectiveCount));
       } catch {
         setTeams(createTeamPlaceholders(configuredTeamsCount));
       } finally {
@@ -101,7 +107,7 @@ export default function TeamsPage() {
       return;
     }
 
-    void saveModuleState(activeEventId, 'teams', teams);
+    void replaceTeamsByEventAction(activeEventId, teams);
   }, [isTeamsHydrated, teams, activeEventId]);
 
   const handleGenerateTeamsAuto = (requestedTeamsCount: number, strategy: AutoAssignStrategy) => {

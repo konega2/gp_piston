@@ -19,6 +19,8 @@ import {
   deleteResult,
   getResultsByEvent,
   getResultsByRace,
+  getResultsSnapshotEntriesByEvent,
+  replaceResultsByEvent,
   updateResult,
   type RaceResultInput
 } from '@/lib/results';
@@ -34,7 +36,9 @@ import {
   type QualySessionDB,
   type TimeAttackSessionDB
 } from '@/lib/sessions';
+import { getTeamsByEvent, replaceTeamsByEvent, type TeamSnapshot } from '@/lib/teams';
 import { getEventById, updateEventConfigPatch, type EventRuntimeConfigPatch } from '@/lib/events';
+import { computeFullEvent } from '@/lib/domain/event.pipeline';
 
 type EventRuntimeConfig = {
   maxPilots: number;
@@ -361,5 +365,176 @@ export async function deleteQualySessionAction(eventId: string, sessionId: strin
     return { ok: true as const };
   } catch {
     return { ok: false as const, error: 'No se pudo eliminar la sesión de qualy.' };
+  }
+}
+
+export async function getTeamsByEventAction(eventId: string) {
+  try {
+    return await getTeamsByEvent(eventId);
+  } catch {
+    return [];
+  }
+}
+
+export async function replaceTeamsByEventAction(eventId: string, teams: TeamSnapshot[]) {
+  try {
+    await replaceTeamsByEvent(eventId, teams);
+    revalidateEventPaths(eventId);
+    return { ok: true as const };
+  } catch {
+    return { ok: false as const, error: 'No se pudieron guardar los equipos.' };
+  }
+}
+
+type ResultSnapshotPayload = {
+  race1: {
+    entries: Array<{
+      pilotId: string;
+      finalPosition: number;
+      basePoints: number;
+      collectiveBonus: number;
+      individualBonus: number;
+      finalPoints: number;
+    }>;
+  };
+  race2: {
+    entries: Array<{
+      pilotId: string;
+      finalPosition: number;
+      basePoints: number;
+      collectiveBonus: number;
+      individualBonus: number;
+      finalPoints: number;
+    }>;
+  };
+};
+
+export async function getResultsSnapshotByEventAction(eventId: string) {
+  try {
+    const rows = await getResultsSnapshotEntriesByEvent(eventId);
+
+    const race1Entries = rows.filter((row) => row.race === 'race1');
+    const race2Entries = rows.filter((row) => row.race === 'race2');
+
+    const toSummary = (entries: typeof race1Entries) => {
+      const ordered = [...entries].sort((a, b) => a.finalPosition - b.finalPosition);
+      const winner = ordered[0] ?? null;
+      const winningCategory = winner?.category ?? null;
+      const oppositeCategory =
+        winningCategory === '390cc' ? '270cc' : winningCategory === '270cc' ? '390cc' : null;
+      const oppositeLeader = oppositeCategory
+        ? ordered.find((entry) => entry.category === oppositeCategory) ?? null
+        : null;
+
+      return {
+        entries,
+        generalWinnerPilotId: winner?.pilotId ?? null,
+        winningCategory,
+        oppositeCategoryFirstPilotId: oppositeLeader?.pilotId ?? null,
+        calculatedAt: null as string | null
+      };
+    };
+
+    return {
+      race1: toSummary(race1Entries),
+      race2: toSummary(race2Entries)
+    };
+  } catch {
+    return {
+      race1: {
+        entries: [],
+        generalWinnerPilotId: null,
+        winningCategory: null,
+        oppositeCategoryFirstPilotId: null,
+        calculatedAt: null
+      },
+      race2: {
+        entries: [],
+        generalWinnerPilotId: null,
+        winningCategory: null,
+        oppositeCategoryFirstPilotId: null,
+        calculatedAt: null
+      }
+    };
+  }
+}
+
+export async function replaceResultsSnapshotByEventAction(eventId: string, payload: ResultSnapshotPayload) {
+  try {
+    const normalized = [
+      ...(Array.isArray(payload.race1?.entries)
+        ? payload.race1.entries.map((entry) => ({ raceNumber: 1, ...entry }))
+        : []),
+      ...(Array.isArray(payload.race2?.entries)
+        ? payload.race2.entries.map((entry) => ({ raceNumber: 2, ...entry }))
+        : [])
+    ]
+      .filter(
+        (entry) =>
+          typeof entry.pilotId === 'string' &&
+          Number.isFinite(entry.finalPosition) &&
+          Number.isFinite(entry.basePoints) &&
+          Number.isFinite(entry.collectiveBonus) &&
+          Number.isFinite(entry.individualBonus) &&
+          Number.isFinite(entry.finalPoints)
+      )
+      .map((entry) => ({
+        raceNumber: Math.floor(entry.raceNumber),
+        pilotId: entry.pilotId,
+        finalPosition: Math.floor(entry.finalPosition),
+        pointsBase: Math.floor(entry.basePoints),
+        bonusCollective: Math.floor(entry.collectiveBonus),
+        bonusIndividual: Math.floor(entry.individualBonus),
+        totalPoints: Math.floor(entry.finalPoints)
+      }));
+
+    await replaceResultsByEvent(eventId, normalized);
+    revalidateEventPaths(eventId);
+    return { ok: true as const };
+  } catch {
+    return { ok: false as const, error: 'No se pudieron guardar los resultados.' };
+  }
+}
+
+export async function computeFullEventAction(eventId: string) {
+  try {
+    return await computeFullEvent(eventId);
+  } catch {
+    return {
+      eventId,
+      seed: 0,
+      sources: {
+        pilots: 0,
+        sessions: 0,
+        qualyRecords: 0,
+        teams: 0,
+        results: 0
+      },
+      standings: {
+        combined: [],
+        timeAttack: [],
+        individual: [],
+        teams: []
+      },
+      snapshots: {
+        races: null,
+        results: {
+          race1: {
+            entries: [],
+            generalWinnerPilotId: null,
+            winningCategory: null,
+            oppositeCategoryFirstPilotId: null,
+            calculatedAt: null
+          },
+          race2: {
+            entries: [],
+            generalWinnerPilotId: null,
+            winningCategory: null,
+            oppositeCategoryFirstPilotId: null,
+            calculatedAt: null
+          }
+        }
+      }
+    };
   }
 }

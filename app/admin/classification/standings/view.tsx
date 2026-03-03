@@ -1,27 +1,36 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { Header } from '@/components/layout/Header';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { useActiveEvent } from '@/context/ActiveEventContext';
-import { useClassification } from '@/context/ClassificationContext';
-import { usePilots } from '@/context/PilotsContext';
-import { useTimeAttackSessions } from '@/context/TimeAttackContext';
-import { buildCombinedStandings } from '@/lib/combinedStandings';
+import { computeFullEventAction } from '@/app/admin/events/[eventId]/actions';
+import type { CombinedStandingRow } from '@/lib/domain/ranking.engine';
 
 export default function ClassificationStandingsPage() {
-  const { activeEventId } = useActiveEvent();
-  const { pilots, isHydrated: pilotsHydrated } = usePilots();
-  const { sessions, isHydrated: sessionsHydrated } = useTimeAttackSessions();
-  const { qualyRecords, isHydrated: classificationHydrated } = useClassification();
+  const { activeEventId, isHydrated: activeEventHydrated } = useActiveEvent();
+  const [standings, setStandings] = useState<CombinedStandingRow[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const standings = useMemo(
-    () => buildCombinedStandings({ pilots, sessions, qualyRecords }),
-    [pilots, qualyRecords, sessions]
-  );
+  useEffect(() => {
+    if (!activeEventHydrated) {
+      return;
+    }
 
-  const isHydrated = pilotsHydrated && sessionsHydrated && classificationHydrated;
+    setIsLoading(true);
+
+    void (async () => {
+      try {
+        const computed = await computeFullEventAction(activeEventId);
+        setStandings(Array.isArray(computed?.standings?.combined) ? computed.standings.combined : []);
+      } finally {
+        setIsLoading(false);
+      }
+    })();
+  }, [activeEventHydrated, activeEventId]);
+
+  const isHydrated = activeEventHydrated && !isLoading;
 
   return (
     <main className="min-h-screen bg-gp-bg text-white">

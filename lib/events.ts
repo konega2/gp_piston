@@ -79,6 +79,7 @@ export type EventRow = {
     qualyGroups?: number;
     teamsCount?: number;
     raceCount?: number;
+    domainSeed?: number;
   } | null;
   created_at: string | Date;
 };
@@ -103,6 +104,7 @@ export type EventRuntimeConfigPatch = Partial<{
   qualyGroups: number;
   teamsCount: number;
   raceCount: number;
+  domainSeed: number;
 }>;
 
 const ensureValidEventInput = (data: EventInput) => {
@@ -242,6 +244,7 @@ export async function updateEventConfigPatch(id: string, patch: EventRuntimeConf
   applyPositive('qualyGroups');
   applyPositive('teamsCount');
   applyPositive('raceCount');
+  applyPositive('domainSeed');
 
   if (typeof nextConfig.raceCount === 'number') {
     nextConfig.racesCount = nextConfig.raceCount;
@@ -256,4 +259,53 @@ export async function updateEventConfigPatch(id: string, patch: EventRuntimeConf
   } catch {
     throw new Error('No se pudo actualizar la configuración del evento.');
   }
+}
+
+function stringHash(input: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+export async function getOrCreateEventDomainSeed(id: string): Promise<number> {
+  await ensureEventsTable();
+  const current = await getEventById(id);
+  if (!current) {
+    throw new Error('Evento no encontrado.');
+  }
+
+  const existing = current.config?.domainSeed;
+  if (typeof existing === 'number' && Number.isFinite(existing) && existing > 0) {
+    return Math.floor(existing);
+  }
+
+  const fallbackSeed = Math.max(1, stringHash(id));
+
+  await sql`
+    UPDATE events
+    SET config = jsonb_set(
+      COALESCE(config, '{}'::jsonb),
+      '{domainSeed}',
+      to_jsonb(${fallbackSeed}::int),
+      true
+    )
+    WHERE id = ${id}
+      AND (
+        config IS NULL
+        OR jsonb_typeof(config->'domainSeed') IS DISTINCT FROM 'number'
+        OR COALESCE((config->>'domainSeed')::int, 0) <= 0
+      );
+  `;
+
+  const refreshed = await getEventById(id);
+  const persisted = refreshed?.config?.domainSeed;
+
+  if (typeof persisted === 'number' && Number.isFinite(persisted) && persisted > 0) {
+    return Math.floor(persisted);
+  }
+
+  return fallbackSeed;
 }
