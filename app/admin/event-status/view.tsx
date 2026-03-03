@@ -29,8 +29,8 @@ type EventStatusMode = 'automatic' | 'manual';
 
 type EventOperationalPhase =
   | 'pre-evento'
-  | 'time-attack'
-  | 'qualy'
+  | `time-attack-${number}`
+  | `qualy-${number}`
   | 'equipos'
   | `carrera-${number}`
   | 'resultados'
@@ -231,10 +231,30 @@ export default function EventStatusPage() {
     return 2;
   }, [eventConfig?.raceCount, racesPayload]);
 
+  const timeAttackCount = useMemo(() => {
+    const fromConfig = sanitizePositive(eventConfig?.timeAttackSessions, 0);
+    if (fromConfig > 0) {
+      return fromConfig;
+    }
+
+    return Math.max(sessions.length, 1);
+  }, [eventConfig?.timeAttackSessions, sessions.length]);
+
+  const qualyCount = useMemo(() => {
+    const fromConfig = sanitizePositive(eventConfig?.qualyGroups, 0);
+    if (fromConfig > 0) {
+      return fromConfig;
+    }
+
+    return Math.max(qualySessions.length, 1);
+  }, [eventConfig?.qualyGroups, qualySessions.length]);
+
   const manualPhases = useMemo<EventOperationalPhase[]>(() => {
+    const timeAttackPhases = Array.from({ length: timeAttackCount }, (_, index) => `time-attack-${index + 1}` as EventOperationalPhase);
+    const qualyPhases = Array.from({ length: qualyCount }, (_, index) => `qualy-${index + 1}` as EventOperationalPhase);
     const racePhases = Array.from({ length: raceCount }, (_, index) => `carrera-${index + 1}` as EventOperationalPhase);
-    return ['pre-evento', 'time-attack', 'qualy', 'equipos', ...racePhases, 'resultados', 'evento-cerrado'];
-  }, [raceCount]);
+    return ['pre-evento', ...timeAttackPhases, ...qualyPhases, 'equipos', ...racePhases, 'resultados', 'evento-cerrado'];
+  }, [qualyCount, raceCount, timeAttackCount]);
 
   const automaticState = useMemo<{ phase: EventOperationalPhase; detail: string | null }>(() => {
     if (status.eventClosed) {
@@ -289,10 +309,10 @@ export default function EventStatusPage() {
     }
 
     if (status.timeAttackCompleted && !status.qualyCompleted) {
-      return { phase: 'qualy', detail: null };
+      return { phase: 'qualy-1', detail: 'Qualy 1' };
     }
 
-    return { phase: 'pre-evento', detail: null };
+    return { phase: 'time-attack-1', detail: 'TA 1' };
   }, [qualySessions, results.race1.entries.length, results.race2.entries.length, sessions, status, racesPayload]);
 
   const activeOperationalPhase = statusControl.mode === 'manual' ? statusControl.manualPhase : automaticState.phase;
@@ -320,6 +340,22 @@ export default function EventStatusPage() {
   }, [normalizedManualPhase, statusControl.manualPhase, statusControl.mode]);
 
   const phaseCards = useMemo<PhaseCard[]>(() => {
+    const timeAttackCards = Array.from({ length: timeAttackCount }, (_, index) => ({
+      key: `time-attack-${index + 1}`,
+      phase: `time-attack-${index + 1}` as EventOperationalPhase,
+      title: `TIME ATTACK ${index + 1}`,
+      subtitle: 'Sesión de cronometraje',
+      rule: `Ventana TA ${index + 1} de ${timeAttackCount}`
+    }));
+
+    const qualyCards = Array.from({ length: qualyCount }, (_, index) => ({
+      key: `qualy-${index + 1}`,
+      phase: `qualy-${index + 1}` as EventOperationalPhase,
+      title: `QUALY ${index + 1}`,
+      subtitle: 'Sesión de clasificación',
+      rule: `Ventana Qualy ${index + 1} de ${qualyCount}`
+    }));
+
     const raceCards = Array.from({ length: raceCount }, (_, index) => ({
       key: `race-${index + 1}`,
       phase: `carrera-${index + 1}` as EventOperationalPhase,
@@ -336,20 +372,8 @@ export default function EventStatusPage() {
         subtitle: 'Preparación del evento',
         rule: 'Configuración general y módulos listos'
       },
-      {
-        key: 'time-attack',
-        phase: 'time-attack',
-        title: 'TIME ATTACK',
-        subtitle: 'Sesiones y cronometraje inicial',
-        rule: `Sesiones TA configuradas (${sessions.length})`
-      },
-      {
-        key: 'qualy',
-        phase: 'qualy',
-        title: 'QUALY',
-        subtitle: 'Clasificación oficial',
-        rule: `Sesiones Qualy configuradas (${qualySessions.length})`
-      },
+      ...timeAttackCards,
+      ...qualyCards,
       {
         key: 'equipos',
         phase: 'equipos',
@@ -373,7 +397,7 @@ export default function EventStatusPage() {
         rule: 'Todas las fases previas completadas'
       }
     ];
-  }, [eventConfig?.teamsCount, qualySessions.length, raceCount, sessions.length, teams.length]);
+  }, [eventConfig?.teamsCount, qualyCount, raceCount, teams.length, timeAttackCount]);
 
   const visualStatusByPhase = useMemo<Record<string, PhaseVisualStatus>>(() => {
     const output: Record<string, PhaseVisualStatus> = {};
@@ -612,11 +636,11 @@ function isOperationalPhase(value: unknown): value is EventOperationalPhase {
 
   return (
     value === 'pre-evento' ||
-    value === 'time-attack' ||
-    value === 'qualy' ||
     value === 'equipos' ||
     value === 'resultados' ||
     value === 'evento-cerrado' ||
+    /^time-attack-\d+$/.test(value) ||
+    /^qualy-\d+$/.test(value) ||
     /^carrera-\d+$/.test(value)
   );
 }
@@ -628,7 +652,7 @@ function getCurrentMinutes() {
 
 function buildSessionWindows(
   sessions: Array<{ startTime: unknown; duration: unknown }>,
-  phase: EventOperationalPhase,
+  phasePrefix: 'time-attack' | 'qualy',
   labelPrefix: string
 ): TimeWindow[] {
   const total = sessions.length;
@@ -642,7 +666,7 @@ function buildSessionWindows(
       }
 
       return {
-        phase,
+        phase: `${phasePrefix}-${index + 1}`,
         start,
         end: Math.min(start + duration, 24 * 60),
         label: `${labelPrefix} ${index + 1}${total > 0 ? ` de ${total}` : ''}`
@@ -707,12 +731,12 @@ function labelForOperationalPhase(phase: EventOperationalPhase) {
     return 'Pre-evento';
   }
 
-  if (phase === 'time-attack') {
-    return 'Time Attack';
+  if (/^time-attack-\d+$/.test(phase)) {
+    return `Time Attack ${phase.split('-')[2]}`;
   }
 
-  if (phase === 'qualy') {
-    return 'Qualy';
+  if (/^qualy-\d+$/.test(phase)) {
+    return `Qualy ${phase.split('-')[1]}`;
   }
 
   if (phase === 'equipos') {
