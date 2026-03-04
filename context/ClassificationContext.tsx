@@ -560,71 +560,75 @@ function normalizeQualySessions(stored: unknown, pilots: PilotRecord[], groupsCo
     return migrateLegacyRecordsToSessions(stored as LegacyQualyRecord[], pilots, groupsCount, maxParticipants);
   }
 
-  const byName = new Map<QualySessionName, LegacyQualySession>();
-  stored.forEach((session) => {
-    const maybe = session as LegacyQualySession;
-    const parsedName = parseSessionName(maybe.name);
-    if (parsedName) {
-      byName.set(parsedName, maybe);
-    }
-  });
+  const storedSessions = stored
+    .map((session) => session as LegacyQualySession)
+    .filter((session) => Boolean(parseSessionName(session?.name)));
 
-  const normalized: QualySession[] = defaults.map((defaultSession): QualySession => {
-    const found = byName.get(defaultSession.name);
-    if (!found) {
-      return defaultSession;
-    }
+  if (storedSessions.length === 0) {
+    return defaults;
+  }
 
-    const assignedPilots = Array.isArray(found.assignedPilots)
-      ? Array.from(
-          new Set(
-            found.assignedPilots.filter(
-              (pilotId): pilotId is string => typeof pilotId === 'string' && availablePilotIds.has(pilotId)
+  const fallbackConfig = buildQualySessionsConfig(storedSessions.length);
+  const defaultCapacity = Math.max(1, Math.ceil(sanitizePositive(maxParticipants, pilots.length || 1) / Math.max(storedSessions.length, 1)));
+
+  const normalized = sortQualySessions(
+    storedSessions.map((session, index): QualySession => {
+      const parsedName = parseSessionName(session.name) ?? fallbackConfig[index]?.name ?? `Q${index + 1}`;
+      const parsedSessionNumber = sessionNumber(parsedName);
+      const fallbackGroupNumber = Number.isFinite(parsedSessionNumber) && parsedSessionNumber !== Number.MAX_SAFE_INTEGER ? parsedSessionNumber : index + 1;
+      const fallbackStartTime = fallbackConfig[index]?.startTime ?? buildClockTime('11:30', index * 10);
+
+      const maxCapacity =
+        typeof session.maxCapacity === 'number' && Number.isFinite(session.maxCapacity) && session.maxCapacity > 0
+          ? Math.floor(session.maxCapacity)
+          : defaultCapacity;
+
+      const assignedPilots = Array.isArray(session.assignedPilots)
+        ? Array.from(
+            new Set(
+              session.assignedPilots.filter(
+                (pilotId): pilotId is string => typeof pilotId === 'string' && availablePilotIds.has(pilotId)
+              )
             )
-          )
-        )
-      : defaultSession.assignedPilots;
+          ).slice(0, maxCapacity)
+        : [];
 
-    const allowedPilots = new Set(assignedPilots);
+      const allowedPilots = new Set(assignedPilots);
+      const times = Array.isArray(session.times)
+        ? session.times
+            .filter(
+              (time): time is QualyPilotTime =>
+                Boolean(time) &&
+                typeof time?.pilotId === 'string' &&
+                allowedPilots.has(time.pilotId) &&
+                typeof time?.qualyTime === 'number' &&
+                Number.isFinite(time.qualyTime) &&
+                time.qualyTime > 0
+            )
+            .map((time) => ({ pilotId: time.pilotId, qualyTime: time.qualyTime }))
+        : [];
 
-    const times = Array.isArray(found.times)
-      ? found.times
-          .filter(
-            (time): time is QualyPilotTime =>
-              Boolean(time) &&
-              typeof time?.pilotId === 'string' &&
-              allowedPilots.has(time.pilotId) &&
-              typeof time?.qualyTime === 'number' &&
-              Number.isFinite(time.qualyTime) &&
-              time.qualyTime > 0
-          )
-          .map((time) => ({ pilotId: time.pilotId, qualyTime: time.qualyTime }))
-      : [];
+      const status: QualySession['status'] =
+        assignedPilots.length > 0 && times.length === assignedPilots.length ? 'completed' : 'pending';
 
-    const status: QualySession['status'] =
-      assignedPilots.length > 0 && times.length === assignedPilots.length ? 'completed' : 'pending';
+      return {
+        id: typeof session.id === 'string' && session.id.trim().length > 0 ? session.id : `qualy-${parsedName.toLowerCase()}`,
+        name: parsedName,
+        groupName: parseGroup(session.groupName) ?? `Grupo ${fallbackGroupNumber}`,
+        startTime: isValidTimeString(session.startTime) ? session.startTime : fallbackStartTime,
+        duration:
+          typeof session.duration === 'number' && Number.isFinite(session.duration) && session.duration > 0
+            ? Math.floor(session.duration)
+            : QUALY_DURATION_MINUTES,
+        maxCapacity,
+        assignedPilots,
+        status,
+        times
+      };
+    })
+  );
 
-    return {
-      ...defaultSession,
-      id: typeof found.id === 'string' ? found.id : defaultSession.id,
-      name: parseSessionName(found.name) ?? defaultSession.name,
-      groupName: parseGroup(found.groupName) ?? defaultSession.groupName,
-      startTime: isValidTimeString(found.startTime) ? found.startTime : defaultSession.startTime,
-      duration:
-        typeof found.duration === 'number' && Number.isFinite(found.duration) && found.duration > 0
-          ? Math.floor(found.duration)
-          : defaultSession.duration,
-      maxCapacity:
-        typeof found.maxCapacity === 'number' && Number.isFinite(found.maxCapacity) && found.maxCapacity > 0
-          ? Math.floor(found.maxCapacity)
-          : defaultSession.maxCapacity,
-      assignedPilots: assignedPilots.slice(0, typeof found.maxCapacity === 'number' && found.maxCapacity > 0 ? Math.floor(found.maxCapacity) : defaultSession.maxCapacity),
-      status,
-      times
-    };
-  });
-
-  return sortQualySessions(normalized);
+  return normalized.length > 0 ? normalized : defaults;
 }
 
 function shouldAutoAssign(sessions: QualySession[]) {
@@ -697,7 +701,7 @@ function applyAssignmentsByPilotOrder(
   orderPilots: (items: PilotRecord[]) => PilotRecord[]
 ): QualySession[] {
   const normalizedPilots = orderPilots([...pilots]).slice(0, sanitizePositive(maxParticipants, pilots.length));
-  const config = buildQualySessionsConfig(groupsCount);
+  const config = buildAssignmentsConfig(sessions, groupsCount);
   const assignmentsBySession = buildBalancedAssignments(config, normalizedPilots);
   return buildSessionsFromAssignments(config, sessions, assignmentsBySession);
 }
@@ -709,7 +713,7 @@ function applyManualAssignments(
   maxParticipants: number,
   manualAssignments: Record<string, string[]>
 ): QualySession[] {
-  const config = buildQualySessionsConfig(groupsCount);
+  const config = buildAssignmentsConfig(sessions, groupsCount);
   const eligiblePilots = orderPilotsByNumero([...pilots]).slice(0, sanitizePositive(maxParticipants, pilots.length));
   const eligibleIds = new Set(eligiblePilots.map((pilot) => pilot.id));
   const assignmentsBySession = new Map<QualySessionName, string[]>();
@@ -734,6 +738,21 @@ function applyManualAssignments(
   });
 
   return buildSessionsFromAssignments(config, sessions, assignmentsBySession);
+}
+
+function buildAssignmentsConfig(
+  sessions: QualySession[],
+  fallbackGroupsCount: number
+): Array<{ name: QualySessionName; groupName: QualyGroupName; startTime: string }> {
+  if (!Array.isArray(sessions) || sessions.length === 0) {
+    return buildQualySessionsConfig(fallbackGroupsCount);
+  }
+
+  return sortQualySessions(sessions).map((session, index) => ({
+    name: session.name,
+    groupName: session.groupName,
+    startTime: isValidTimeString(session.startTime) ? session.startTime : buildClockTime('11:30', index * 10)
+  }));
 }
 
 function buildSessionsFromAssignments(
