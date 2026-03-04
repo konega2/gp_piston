@@ -23,6 +23,11 @@ async function ensureResultRelatedTables() {
           CONSTRAINT uq_team_members_team_pilot UNIQUE (team_id, pilot_id)
         );
       `;
+
+      await sql`
+        ALTER TABLE race_results
+        ADD COLUMN IF NOT EXISTS fastest_lap_seconds NUMERIC;
+      `;
     })();
   }
 
@@ -35,6 +40,7 @@ export type RaceResultDB = {
   race_number: number;
   pilot_id: string;
   final_position: number;
+  fastest_lap_seconds: number | null;
   points_base: number;
   bonus_collective: number;
   bonus_individual: number;
@@ -46,6 +52,7 @@ export type RaceResultInput = {
   raceNumber: number;
   pilotId: string;
   finalPosition: number;
+  fastestLapSeconds?: number | null;
   pointsBase: number;
   bonusCollective?: number;
   bonusIndividual?: number;
@@ -60,6 +67,7 @@ export type RaceResultSnapshotEntry = {
   category: '390cc' | '270cc';
   teamName: string;
   finalPosition: number;
+  fastestLapSeconds: number | null;
   categoryPosition: number;
   basePoints: number;
   collectiveBonus: number;
@@ -82,6 +90,7 @@ const validateResult = (value: RaceResultInput) => {
 };
 
 export async function getResultsByEvent(eventId: string): Promise<RaceResultDB[]> {
+  await ensureResultRelatedTables();
   const { rows } = await sql<RaceResultDB>`
     SELECT *
     FROM race_results
@@ -92,6 +101,7 @@ export async function getResultsByEvent(eventId: string): Promise<RaceResultDB[]
 }
 
 export async function getResultsByRace(eventId: string, raceNumber: number): Promise<RaceResultDB[]> {
+  await ensureResultRelatedTables();
   const { rows } = await sql<RaceResultDB>`
     SELECT *
     FROM race_results
@@ -102,6 +112,7 @@ export async function getResultsByRace(eventId: string, raceNumber: number): Pro
 }
 
 export async function createResult(eventId: string, data: RaceResultInput): Promise<string> {
+  await ensureResultRelatedTables();
   validateResult(data);
   const id = crypto.randomUUID();
 
@@ -112,6 +123,7 @@ export async function createResult(eventId: string, data: RaceResultInput): Prom
       race_number,
       pilot_id,
       final_position,
+      fastest_lap_seconds,
       points_base,
       bonus_collective,
       bonus_individual,
@@ -123,6 +135,7 @@ export async function createResult(eventId: string, data: RaceResultInput): Prom
       ${Math.floor(data.raceNumber)},
       ${data.pilotId},
       ${Math.floor(data.finalPosition)},
+      ${typeof data.fastestLapSeconds === 'number' && Number.isFinite(data.fastestLapSeconds) && data.fastestLapSeconds > 0 ? data.fastestLapSeconds : null},
       ${Math.floor(data.pointsBase)},
       ${Math.floor(data.bonusCollective ?? 0)},
       ${Math.floor(data.bonusIndividual ?? 0)},
@@ -134,6 +147,7 @@ export async function createResult(eventId: string, data: RaceResultInput): Prom
 }
 
 export async function updateResult(eventId: string, resultId: string, data: RaceResultInput): Promise<void> {
+  await ensureResultRelatedTables();
   validateResult(data);
 
   await sql`
@@ -142,6 +156,7 @@ export async function updateResult(eventId: string, resultId: string, data: Race
       race_number = ${Math.floor(data.raceNumber)},
       pilot_id = ${data.pilotId},
       final_position = ${Math.floor(data.finalPosition)},
+      fastest_lap_seconds = ${typeof data.fastestLapSeconds === 'number' && Number.isFinite(data.fastestLapSeconds) && data.fastestLapSeconds > 0 ? data.fastestLapSeconds : null},
       points_base = ${Math.floor(data.pointsBase)},
       bonus_collective = ${Math.floor(data.bonusCollective ?? 0)},
       bonus_individual = ${Math.floor(data.bonusIndividual ?? 0)},
@@ -151,6 +166,7 @@ export async function updateResult(eventId: string, resultId: string, data: Race
 }
 
 export async function deleteResult(eventId: string, resultId: string): Promise<void> {
+  await ensureResultRelatedTables();
   await sql`DELETE FROM race_results WHERE id = ${resultId} AND event_id = ${eventId};`;
 }
 
@@ -166,6 +182,7 @@ export async function getResultsSnapshotEntriesByEvent(eventId: string): Promise
     category: '390cc' | '270cc' | null;
     team_name: string | null;
     final_position: number;
+    fastest_lap_seconds: number | null;
     points_base: number;
     bonus_collective: number;
     bonus_individual: number;
@@ -184,6 +201,7 @@ export async function getResultsSnapshotEntriesByEvent(eventId: string): Promise
       END AS category,
       COALESCE(t.name, 'Sin equipo') AS team_name,
       rr.final_position,
+      rr.fastest_lap_seconds,
       rr.points_base,
       rr.bonus_collective,
       rr.bonus_individual,
@@ -221,6 +239,7 @@ export async function getResultsSnapshotEntriesByEvent(eventId: string): Promise
       category,
       teamName: row.team_name ?? 'Sin equipo',
       finalPosition: row.final_position,
+      fastestLapSeconds: typeof row.fastest_lap_seconds === 'number' ? row.fastest_lap_seconds : null,
       categoryPosition: nextCategoryRank,
       basePoints: row.points_base,
       collectiveBonus: row.bonus_collective,
@@ -236,12 +255,14 @@ export async function replaceResultsByEvent(
     raceNumber: number;
     pilotId: string;
     finalPosition: number;
+    fastestLapSeconds?: number | null;
     pointsBase: number;
     bonusCollective: number;
     bonusIndividual: number;
     totalPoints: number;
   }>
 ): Promise<void> {
+  await ensureResultRelatedTables();
   await sql`DELETE FROM race_results WHERE event_id = ${eventId};`;
 
   for (const entry of entries) {
@@ -249,6 +270,7 @@ export async function replaceResultsByEvent(
       raceNumber: entry.raceNumber,
       pilotId: entry.pilotId,
       finalPosition: entry.finalPosition,
+      fastestLapSeconds: entry.fastestLapSeconds,
       pointsBase: entry.pointsBase,
       bonusCollective: entry.bonusCollective,
       bonusIndividual: entry.bonusIndividual,

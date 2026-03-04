@@ -37,6 +37,7 @@ type SnapshotRow = {
   category: '390cc' | '270cc';
   teamName: string;
   finalPosition: number;
+  fastestLapSeconds: number | null;
   categoryPosition: number;
   basePoints: number;
   collectiveBonus: number;
@@ -72,6 +73,7 @@ function normalizeRaceResult(entries: SnapshotRow[], race: 'race1' | 'race2'): R
       category: entry.category,
       teamName: entry.teamName,
       finalPosition: entry.finalPosition,
+      fastestLapSeconds: entry.fastestLapSeconds,
       categoryPosition: entry.categoryPosition,
       basePoints: entry.basePoints,
       collectiveBonus: entry.collectiveBonus,

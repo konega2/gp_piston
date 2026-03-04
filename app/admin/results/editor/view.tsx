@@ -40,6 +40,7 @@ export default function ResultsEditorPage() {
   const [races, setRaces] = useState<StoredRaces>({ race1: null, race2: null });
   const [results, setResults] = useState<StoredResults>({ race1: EMPTY_RACE_RESULT, race2: EMPTY_RACE_RESULT });
   const [draftPositions, setDraftPositions] = useState<Record<RaceKey, Record<string, string>>>({ race1: {}, race2: {} });
+  const [draftFastestLaps, setDraftFastestLaps] = useState<Record<RaceKey, Record<string, string>>>({ race1: {}, race2: {} });
   const [isHydrated, setIsHydrated] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [error, setError] = useState('');
@@ -80,6 +81,7 @@ export default function ResultsEditorPage() {
         entries: results.race1.entries.map((entry) => ({
           pilotId: entry.pilotId,
           finalPosition: entry.finalPosition,
+          fastestLapSeconds: entry.fastestLapSeconds,
           basePoints: entry.basePoints,
           collectiveBonus: entry.collectiveBonus,
           individualBonus: entry.individualBonus,
@@ -90,6 +92,7 @@ export default function ResultsEditorPage() {
         entries: results.race2.entries.map((entry) => ({
           pilotId: entry.pilotId,
           finalPosition: entry.finalPosition,
+          fastestLapSeconds: entry.fastestLapSeconds,
           basePoints: entry.basePoints,
           collectiveBonus: entry.collectiveBonus,
           individualBonus: entry.individualBonus,
@@ -105,6 +108,7 @@ export default function ResultsEditorPage() {
     }
 
     const nextDraft: Record<RaceKey, Record<string, string>> = { race1: {}, race2: {} };
+    const nextFastestLaps: Record<RaceKey, Record<string, string>> = { race1: {}, race2: {} };
 
     (['race1', 'race2'] as const).forEach((raceKey) => {
       const grid = races[raceKey];
@@ -112,20 +116,33 @@ export default function ResultsEditorPage() {
         return;
       }
 
-      const existingByPilot = new Map(results[raceKey].entries.map((entry) => [entry.pilotId, entry.finalPosition]));
+      const existingByPilot = new Map(results[raceKey].entries.map((entry) => [entry.pilotId, entry]));
       buildEditorRows(grid).forEach(({ pilot }) => {
         const found = existingByPilot.get(pilot.pilotId);
-        nextDraft[raceKey][pilot.pilotId] = typeof found === 'number' ? String(found) : '';
+        nextDraft[raceKey][pilot.pilotId] = typeof found?.finalPosition === 'number' ? String(found.finalPosition) : '';
+        nextFastestLaps[raceKey][pilot.pilotId] =
+          typeof found?.fastestLapSeconds === 'number' && found.fastestLapSeconds > 0 ? String(found.fastestLapSeconds) : '';
       });
     });
 
     setDraftPositions(nextDraft);
+    setDraftFastestLaps(nextFastestLaps);
   }, [isHydrated, races, results]);
 
   const hasRaceGrids = Boolean(races.race1 && races.race2);
 
   const handlePositionChange = (race: RaceKey, pilotId: string, value: string) => {
     setDraftPositions((prev) => ({
+      ...prev,
+      [race]: {
+        ...prev[race],
+        [pilotId]: value
+      }
+    }));
+  };
+
+  const handleFastestLapChange = (race: RaceKey, pilotId: string, value: string) => {
+    setDraftFastestLaps((prev) => ({
       ...prev,
       [race]: {
         ...prev[race],
@@ -144,7 +161,8 @@ export default function ResultsEditorPage() {
     const parsed = buildEditorRows(grid).map(({ pilot, group }) => ({
       group,
       pilot,
-      finalPosition: Number(draftPositions[race][pilot.pilotId])
+      finalPosition: Number(draftPositions[race][pilot.pilotId]),
+      fastestLapSeconds: Number(draftFastestLaps[race][pilot.pilotId])
     }));
 
     const allFilled = parsed.every((item) => Number.isFinite(item.finalPosition) && item.finalPosition > 0);
@@ -165,7 +183,11 @@ export default function ResultsEditorPage() {
 
     const computed = computeRaceResults(
       race,
-      parsed.map(({ pilot, finalPosition }) => ({ pilot, finalPosition }))
+      parsed.map(({ pilot, finalPosition, fastestLapSeconds }) => ({
+        pilot,
+        finalPosition,
+        fastestLapSeconds: Number.isFinite(fastestLapSeconds) && fastestLapSeconds > 0 ? fastestLapSeconds : null
+      }))
     );
     setResults((prev) => ({ ...prev, [race]: computed }));
     setError('');
@@ -229,7 +251,9 @@ export default function ResultsEditorPage() {
                     race="race1"
                     grid={races.race1}
                     draftPositions={draftPositions.race1}
+                    draftFastestLaps={draftFastestLaps.race1}
                     onPositionChange={handlePositionChange}
+                    onFastestLapChange={handleFastestLapChange}
                     onCalculate={handleCalculateRace}
                     computed={results.race1}
                     disabled={!isHydrated || !hasRaceGrids}
@@ -239,7 +263,9 @@ export default function ResultsEditorPage() {
                     race="race2"
                     grid={races.race2}
                     draftPositions={draftPositions.race2}
+                    draftFastestLaps={draftFastestLaps.race2}
                     onPositionChange={handlePositionChange}
+                    onFastestLapChange={handleFastestLapChange}
                     onCalculate={handleCalculateRace}
                     computed={results.race2}
                     disabled={!isHydrated || !hasRaceGrids}
@@ -259,7 +285,9 @@ function RaceEditorCard({
   race,
   grid,
   draftPositions,
+  draftFastestLaps,
   onPositionChange,
+  onFastestLapChange,
   onCalculate,
   computed,
   disabled
@@ -268,7 +296,9 @@ function RaceEditorCard({
   race: RaceKey;
   grid: RaceGrid | null;
   draftPositions: Record<string, string>;
+  draftFastestLaps: Record<string, string>;
   onPositionChange: (race: RaceKey, pilotId: string, value: string) => void;
+  onFastestLapChange: (race: RaceKey, pilotId: string, value: string) => void;
   onCalculate: (race: RaceKey) => void;
   computed: RaceComputedResult;
   disabled: boolean;
@@ -303,14 +333,18 @@ function RaceEditorCard({
               race={race}
               rows={rowsByGroup.group1}
               draftPositions={draftPositions}
+              draftFastestLaps={draftFastestLaps}
               onPositionChange={onPositionChange}
+              onFastestLapChange={onFastestLapChange}
             />
             <GroupEditorTable
               title="Grupo 2"
               race={race}
               rows={rowsByGroup.group2}
               draftPositions={draftPositions}
+              draftFastestLaps={draftFastestLaps}
               onPositionChange={onPositionChange}
+              onFastestLapChange={onFastestLapChange}
             />
           </div>
 
@@ -339,13 +373,17 @@ function GroupEditorTable({
   race,
   rows,
   draftPositions,
-  onPositionChange
+  draftFastestLaps,
+  onPositionChange,
+  onFastestLapChange
 }: {
   title: string;
   race: RaceKey;
   rows: EditorRow[];
   draftPositions: Record<string, string>;
+  draftFastestLaps: Record<string, string>;
   onPositionChange: (race: RaceKey, pilotId: string, value: string) => void;
+  onFastestLapChange: (race: RaceKey, pilotId: string, value: string) => void;
 }) {
   return (
     <section className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
@@ -359,6 +397,7 @@ function GroupEditorTable({
           <thead className="bg-white/[0.03]">
             <tr className="text-left text-[11px] uppercase tracking-[0.12em] text-gp-textSoft">
               <th className="px-3 py-2.5">Posición final</th>
+              <th className="px-3 py-2.5">Vuelta rápida (s)</th>
               <th className="px-3 py-2.5">Número piloto</th>
               <th className="px-3 py-2.5">Nombre</th>
               <th className="px-3 py-2.5">Categoría</th>
@@ -374,6 +413,17 @@ function GroupEditorTable({
                     value={draftPositions[pilot.pilotId] ?? ''}
                     onChange={(event) => onPositionChange(race, pilot.pilotId, event.target.value)}
                     className="h-9 w-24 rounded-md border border-white/15 bg-[#0E141F] px-2 text-sm text-white outline-none transition-all duration-200 focus:border-gp-racingRed/65 focus:shadow-input-red"
+                  />
+                </td>
+                <td className="px-3 py-2.5">
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.001"
+                    value={draftFastestLaps[pilot.pilotId] ?? ''}
+                    onChange={(event) => onFastestLapChange(race, pilot.pilotId, event.target.value)}
+                    placeholder="--"
+                    className="h-9 w-28 rounded-md border border-white/15 bg-[#0E141F] px-2 text-sm text-white outline-none transition-all duration-200 focus:border-gp-telemetryBlue/65 focus:shadow-input-red"
                   />
                 </td>
                 <td className="px-3 py-2.5 text-sm font-semibold text-cyan-200">#{String(pilot.numeroPiloto).padStart(2, '0')}</td>

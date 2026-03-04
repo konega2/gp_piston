@@ -27,6 +27,7 @@ export type RaceResultEntry = {
   category: RaceCategory;
   teamName: string;
   finalPosition: number;
+  fastestLapSeconds: number | null;
   categoryPosition: number;
   basePoints: number;
   collectiveBonus: number;
@@ -98,6 +99,7 @@ export function computeRaceResults(
   rows: Array<{
     pilot: RacePilot & { category: RaceCategory };
     finalPosition: number;
+    fastestLapSeconds?: number | null;
   }>,
   options?: { calculatedAt?: string | null }
 ): RaceComputedResult {
@@ -147,6 +149,10 @@ export function computeRaceResults(
       category: row.pilot.category,
       teamName: row.pilot.teamName,
       finalPosition: row.finalPosition,
+      fastestLapSeconds:
+        typeof row.fastestLapSeconds === 'number' && Number.isFinite(row.fastestLapSeconds) && row.fastestLapSeconds > 0
+          ? Math.round(row.fastestLapSeconds * 1000) / 1000
+          : null,
       categoryPosition: categoryRank,
       basePoints,
       collectiveBonus,
@@ -267,7 +273,8 @@ export function normalizeRaceResult(value: unknown): RaceComputedResult {
           typeof entry.basePoints === 'number' &&
           typeof entry.collectiveBonus === 'number' &&
           typeof entry.individualBonus === 'number' &&
-          typeof entry.finalPoints === 'number'
+          typeof entry.finalPoints === 'number' &&
+          (typeof entry.fastestLapSeconds === 'number' || entry.fastestLapSeconds === null || typeof entry.fastestLapSeconds === 'undefined')
       )
     : [];
 

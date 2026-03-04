@@ -391,6 +391,7 @@ type ResultSnapshotPayload = {
     entries: Array<{
       pilotId: string;
       finalPosition: number;
+      fastestLapSeconds?: number | null;
       basePoints: number;
       collectiveBonus: number;
       individualBonus: number;
@@ -401,6 +402,7 @@ type ResultSnapshotPayload = {
     entries: Array<{
       pilotId: string;
       finalPosition: number;
+      fastestLapSeconds?: number | null;
       basePoints: number;
       collectiveBonus: number;
       individualBonus: number;
@@ -482,6 +484,10 @@ export async function replaceResultsSnapshotByEventAction(eventId: string, paylo
         raceNumber: Math.floor(entry.raceNumber),
         pilotId: entry.pilotId,
         finalPosition: Math.floor(entry.finalPosition),
+        fastestLapSeconds:
+          typeof entry.fastestLapSeconds === 'number' && Number.isFinite(entry.fastestLapSeconds) && entry.fastestLapSeconds > 0
+            ? entry.fastestLapSeconds
+            : null,
         pointsBase: Math.floor(entry.basePoints),
         bonusCollective: Math.floor(entry.collectiveBonus),
         bonusIndividual: Math.floor(entry.individualBonus),

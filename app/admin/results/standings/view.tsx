@@ -280,6 +280,7 @@ function RaceOfficialTable({ title, entries }: { title: string; entries: RaceCom
           <thead className="bg-white/[0.03]">
             <tr className="text-left text-[11px] uppercase tracking-[0.12em] text-gp-textSoft">
               <th className="px-3 py-2.5">Posición</th>
+              <th className="px-3 py-2.5">Vuelta rápida</th>
               <th className="px-3 py-2.5">Número piloto</th>
               <th className="px-3 py-2.5">Nombre</th>
               <th className="px-3 py-2.5">Categoría</th>
@@ -293,6 +294,9 @@ function RaceOfficialTable({ title, entries }: { title: string; entries: RaceCom
             {entries.map((entry) => (
               <tr key={`${title}-${entry.pilotId}-${entry.finalPosition}`} className="border-t border-white/10 bg-white/[0.01]">
                 <td className="px-3 py-2.5 text-sm font-semibold text-white">P{entry.finalPosition}</td>
+                <td className="px-3 py-2.5 text-sm font-semibold text-amber-200">
+                  {typeof entry.fastestLapSeconds === 'number' ? `${entry.fastestLapSeconds.toFixed(3)} s` : '--'}
+                </td>
                 <td className="px-3 py-2.5 text-sm font-semibold text-cyan-200">#{String(entry.numeroPiloto).padStart(2, '0')}</td>
                 <td className="px-3 py-2.5 text-sm font-medium uppercase tracking-[0.08em] text-white">{entry.fullName}</td>
                 <td className="px-3 py-2.5 text-xs font-semibold uppercase tracking-[0.12em] text-gp-textSoft">{entry.category}</td>

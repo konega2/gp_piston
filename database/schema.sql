@@ -132,6 +132,7 @@ CREATE TABLE IF NOT EXISTS race_results (
   race_number INTEGER NOT NULL,
   pilot_id TEXT NOT NULL REFERENCES pilots(id) ON DELETE CASCADE,
   final_position INTEGER NOT NULL,
+  fastest_lap_seconds NUMERIC,
   points_base INTEGER NOT NULL,
   bonus_collective INTEGER NOT NULL DEFAULT 0,
   bonus_individual INTEGER NOT NULL DEFAULT 0,
