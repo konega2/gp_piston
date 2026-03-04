@@ -6,7 +6,7 @@ import { Header } from '@/components/layout/Header';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { useActiveEvent } from '@/context/ActiveEventContext';
 
-type ModuleKey = 'editor' | 'standings';
+type ModuleKey = 'editor' | 'standings' | 'sanctions';
 
 type ModuleConfig = {
   key: ModuleKey;
@@ -36,6 +36,15 @@ const modules: ModuleConfig[] = [
     href: '/admin/results/standings',
     tone: 'deep-blue',
     icon: <StandingsIcon />
+  },
+  {
+    key: 'sanctions',
+    number: '03',
+    title: 'SANCIONES',
+    subtitle: 'GESTIÓN DE PENALIZACIONES POR FASE Y DESTINO',
+    href: '/admin/results/sanctions',
+    tone: 'technical-red',
+    icon: <SanctionsIcon />
   }
 ];
 
@@ -134,6 +143,17 @@ function StandingsIcon() {
     <svg viewBox="0 0 24 24" className="h-14 w-14" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden>
       <path d="M4 20h16" />
       <path d="M7 20V11h3v9M14 20V6h3v14" />
+    </svg>
+  );
+}
+
+function SanctionsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-14 w-14" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden>
+      <path d="M12 3v12" />
+      <path d="M7 8h10" />
+      <path d="M6 21h12" />
+      <path d="M8 15h8" />
     </svg>
   );
 }

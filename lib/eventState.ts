@@ -40,6 +40,7 @@ export type EventModuleKey =
   | 'teams'
   | 'races'
   | 'results'
+  | 'sanctions'
   | 'raffles'
   | 'rafflesHistory'
   | 'eventStatus';

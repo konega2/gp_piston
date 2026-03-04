@@ -7,6 +7,7 @@ import { Sidebar } from '@/components/layout/Sidebar';
 import { useActiveEvent } from '@/context/ActiveEventContext';
 import { loadModuleState } from '@/lib/eventStateClient';
 import { getResultsSnapshotByEventAction, getTeamsByEventAction } from '@/app/admin/events/[eventId]/actions';
+import { applySanctionsToResults, normalizeSanctions, type SanctionRecord } from '@/lib/sanctions';
 import {
   EMPTY_RACE_RESULT,
   buildIndividualStandings,
@@ -29,6 +30,7 @@ export default function ResultsStandingsPage() {
   const [results, setResults] = useState<StoredResults>({ race1: EMPTY_RACE_RESULT, race2: EMPTY_RACE_RESULT });
   const [races, setRaces] = useState<StoredRaces>({ race1: null, race2: null });
   const [teams, setTeams] = useState<TeamRecord[]>([]);
+  const [sanctions, setSanctions] = useState<SanctionRecord[]>([]);
   const [isHydrated, setIsHydrated] = useState(false);
 
   useEffect(() => {
@@ -69,27 +71,32 @@ export default function ResultsStandingsPage() {
         } else {
           setTeams([]);
         }
+
+        const parsedSanctions = await loadModuleState<unknown>(activeEventId, 'sanctions', []);
+        setSanctions(normalizeSanctions(parsedSanctions));
       } finally {
         setIsHydrated(true);
       }
     })();
   }, [activeEventHydrated, activeEventId]);
 
+  const resultsWithSanctions = useMemo(() => applySanctionsToResults(results, sanctions), [results, sanctions]);
+
   const race1Entries = useMemo(
-    () => [...results.race1.entries].sort((a, b) => a.finalPosition - b.finalPosition),
-    [results.race1.entries]
+    () => [...resultsWithSanctions.race1.entries].sort((a, b) => a.finalPosition - b.finalPosition),
+    [resultsWithSanctions.race1.entries]
   );
 
   const race2Entries = useMemo(
-    () => [...results.race2.entries].sort((a, b) => a.finalPosition - b.finalPosition),
-    [results.race2.entries]
+    () => [...resultsWithSanctions.race2.entries].sort((a, b) => a.finalPosition - b.finalPosition),
+    [resultsWithSanctions.race2.entries]
   );
 
   const race1ByGroup = useMemo(() => splitEntriesByGroup(race1Entries, races.race1), [race1Entries, races.race1]);
   const race2ByGroup = useMemo(() => splitEntriesByGroup(race2Entries, races.race2), [race2Entries, races.race2]);
 
-  const individualStandings = useMemo(() => buildIndividualStandings(results), [results]);
-  const teamStandings = useMemo(() => buildTeamStandings(results, teams), [results, teams]);
+  const individualStandings = useMemo(() => buildIndividualStandings(resultsWithSanctions), [resultsWithSanctions]);
+  const teamStandings = useMemo(() => buildTeamStandings(resultsWithSanctions, teams), [resultsWithSanctions, teams]);
 
   return (
     <main className="min-h-screen bg-gp-bg text-white">
