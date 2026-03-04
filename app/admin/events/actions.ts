@@ -10,13 +10,15 @@ const toPositiveInt = (value: FormDataEntryValue | null) => {
 };
 
 const parseEventFormData = (formData: FormData): EventInput => {
+  const rawTeamsCount = toPositiveInt(formData.get('teamsCount'));
+
   const data: EventInput = {
     name: String(formData.get('name') ?? ''),
     date: String(formData.get('date') ?? ''),
     location: String(formData.get('location') ?? ''),
     maxParticipants: toPositiveInt(formData.get('maxParticipants')),
     sessionMaxCapacity: toPositiveInt(formData.get('sessionMaxCapacity')),
-    teamsCount: toPositiveInt(formData.get('teamsCount')),
+    teamsCount: rawTeamsCount > 0 ? rawTeamsCount : 2,
     timeAttackSessions: toPositiveInt(formData.get('timeAttackSessions')),
     qualyGroups: toPositiveInt(formData.get('qualyGroups')),
     raceCount: toPositiveInt(formData.get('raceCount'))

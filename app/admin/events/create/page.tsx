@@ -53,12 +53,6 @@ export default function CreateEventPage({
                       defaultValue="20"
                     />
                     <Field
-                      label="Cantidad equipos"
-                      name="teamsCount"
-                      type="number"
-                      defaultValue="10"
-                    />
-                    <Field
                       label="Sesiones TA"
                       name="timeAttackSessions"
                       type="number"
@@ -76,6 +70,7 @@ export default function CreateEventPage({
                       type="number"
                       defaultValue="2"
                     />
+                    <input type="hidden" name="teamsCount" value="2" />
                   </div>
 
                   {error ? (

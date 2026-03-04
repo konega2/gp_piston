@@ -83,12 +83,6 @@ export default async function EditEventPage({
                     defaultValue={String(eventData.config?.sessionMaxCapacity ?? 20)}
                   />
                   <Field
-                    label="Cantidad equipos"
-                    name="teamsCount"
-                    type="number"
-                    defaultValue={String(eventData.config?.teamsCount ?? 5)}
-                  />
-                  <Field
                     label="Sesiones TA"
                     name="timeAttackSessions"
                     type="number"
@@ -109,6 +103,7 @@ export default async function EditEventPage({
                     helperText="Se configura únicamente desde el módulo de Carreras"
                   />
                   <input type="hidden" name="raceCount" value={String(eventData.config?.raceCount ?? 2)} />
+                  <input type="hidden" name="teamsCount" value={String(eventData.config?.teamsCount ?? 2)} />
                 </div>
 
                 {error ? (
